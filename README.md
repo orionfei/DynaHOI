@@ -171,4 +171,4 @@ A detailed tutorial is coming soon, including:
 
 Huge thanks to these excellent open-source projects that made this work possible:
 
-[GR00T](https://github.com/NVIDIA/Isaac-GR00T), [OpenVLA](https://github.com/openvla/openvla), [UP-VLA](https://github.com/CladernyJorn/UP-VLA), [openpi](https://github.com/Physical-Intelligence/openpi) and [lerobot](https://github.com/huggingface/lerobot). 
+[GR00T](https://github.com/NVIDIA/Isaac-GR00T), [OpenVLA](https://github.com/openvla/openvla), [UP-VLA](https://github.com/CladernyJorn/UP-VLA), [Openpi](https://github.com/Physical-Intelligence/openpi), [Lerobot](https://github.com/huggingface/lerobot) and [OmniObject3D](https://github.com/omniobject3d/OmniObject3D/tree/main?tab=readme-ov-file). 
