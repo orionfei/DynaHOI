@@ -115,7 +115,7 @@ class ArgsConfig:
     """Optional motion hint for baseline VLM processing."""
 
     sample_frame_num: int = 5
-    """Number of uniformly sampled observation frames for baseline evaluation."""
+    """Number of adjacent history frames for baseline evaluation."""
     
     denoising_steps: int = 4
     """Number of denoising steps to use."""
@@ -123,7 +123,7 @@ class ArgsConfig:
     evaluation_output_path: str = "/data1/yfl_data/DynaHOI/scripts/evaluation_results"
     """Path to save the evaluation results."""
 
-    improve_info: str = "uniform5_baseline"
+    improve_info: str = "adjacent5_baseline"
 
 def main(args: ArgsConfig):
     data_config = DATA_CONFIG_MAP[args.data_config]
@@ -248,7 +248,7 @@ def main(args: ArgsConfig):
                     traj_id,
                     repeat_num = i,
                     modality_keys=args.modality_keys,
-                    steps=int(trajectory_lengths[traj_id] * 1.2), # Expand interaction window to 1.2 * steps here
+                    steps=int(trajectory_lengths[traj_id]),
                     action_horizon=args.action_horizon,
                     metrics_json_path = metrics_json_path,
                     traj_store_path = traj_store_path,

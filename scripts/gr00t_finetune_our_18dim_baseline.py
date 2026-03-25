@@ -160,17 +160,8 @@ class ArgsConfig:
     baseline_motion_hint: Literal["none", "diff_map_and_crop"] = "none"
     """Optional motion hint for baseline VLM processing."""
 
-    observe_frame_source: Literal["videos_obs", "video_prefix"] = "video_prefix"
-    """Source used to construct baseline observation frames."""
-
     observe_frame_num: int = 5
-    """Number of prepended observation frames."""
-
-    observe_video_ratio: float = 0.2
-    """Prefix ratio used when observe_frame_source == 'video_prefix'."""
-
-    observe_frame_cache_size: int = 1024
-    """Number of episodes whose sampled observation frames are cached per worker."""
+    """Number of adjacent history frames prepended before the current frame."""
 
     # Mixture dataset parameters
     balance_dataset_weights: bool = True
@@ -213,10 +204,7 @@ def main(config: ArgsConfig):
         embodiment_tag=embodiment_tag,  # This will override the dataset's embodiment tag to "new_embodiment"
         video_backend=config.video_backend,
         add_observe_frames=True,
-        observe_frame_source=config.observe_frame_source,
         observe_frame_num=config.observe_frame_num,
-        observe_video_ratio=config.observe_video_ratio,
-        observe_frame_cache_size=config.observe_frame_cache_size,
     )
        
 

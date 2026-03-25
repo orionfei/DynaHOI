@@ -26,7 +26,7 @@ See `scripts/load_dataset.py` for examples on how to use these datasets.
 
 import hashlib
 import json
-from collections import OrderedDict, defaultdict
+from collections import defaultdict
 from pathlib import Path
 from typing import Literal, Sequence
 
@@ -36,7 +36,7 @@ from pydantic import BaseModel, Field, ValidationError
 from torch.utils.data import Dataset
 from tqdm import tqdm
 
-from gr00t.utils.video import get_all_frames, get_frames_by_timestamps, get_prefix_frames
+from gr00t.utils.video import get_frames_by_timestamps
 
 from .embodiment_tags import EmbodimentTag
 from .schema import (
@@ -122,10 +122,7 @@ class LeRobotSingleDataset(Dataset):
         video_backend_kwargs: dict | None = None,
         transforms: ComposedModalityTransform | None = None,
         add_observe_frames: bool = False,
-        observe_frame_source: Literal["videos_obs", "video_prefix"] = "videos_obs",
         observe_frame_num: int = 5,
-        observe_video_ratio: float = 0.2,
-        observe_frame_cache_size: int = 1024,
     ):
         """
         Initialize the dataset.
@@ -138,11 +135,8 @@ class LeRobotSingleDataset(Dataset):
             video_backend_kwargs (dict): Keyword arguments for the video backend when initializing the video reader.
             transforms (ComposedModalityTransform): The transforms to apply to the dataset.
             embodiment_tag (EmbodimentTag): Overload the embodiment tag for the dataset. e.g. define it as "new_embodiment"
-            add_observe_frames (bool): Whether to prepend observation frames for baseline training.
-            observe_frame_source (Literal["videos_obs", "video_prefix"]): Source used to load observation frames.
-            observe_frame_num (int): Number of observation frames to prepend.
-            observe_video_ratio (float): Prefix ratio used when observe_frame_source == "video_prefix".
-            observe_frame_cache_size (int): Number of episodes whose sampled observation frames are cached per worker.
+            add_observe_frames (bool): Whether to prepend adjacent observation history frames for baseline training.
+            observe_frame_num (int): Number of adjacent history frames to prepend before the current frame.
         """
         # first check if the path directory exists
         if not Path(dataset_path).exists():
@@ -155,25 +149,10 @@ class LeRobotSingleDataset(Dataset):
             transforms if transforms is not None else ComposedModalityTransform(transforms=[])
         )
         self.add_observe_frames = add_observe_frames
-        self.observe_frame_source = observe_frame_source
         self.observe_frame_num = observe_frame_num
-        self.observe_video_ratio = observe_video_ratio
-        self.observe_frame_cache_size = observe_frame_cache_size
-        self._observe_frame_cache: OrderedDict[tuple[str, str, int, float], np.ndarray] = OrderedDict()
         if self.add_observe_frames:
             if self.observe_frame_num <= 0:
                 raise ValueError(f"observe_frame_num must be positive, got {self.observe_frame_num}.")
-            if self.observe_frame_cache_size <= 0:
-                raise ValueError(
-                    f"observe_frame_cache_size must be positive, got {self.observe_frame_cache_size}."
-                )
-            if self.observe_frame_source == "video_prefix":
-                if not (0.0 < self.observe_video_ratio <= 1.0):
-                    raise ValueError(
-                        f"observe_video_ratio must be in (0, 1], got {self.observe_video_ratio}."
-                    )
-            elif self.observe_frame_source != "videos_obs":
-                raise ValueError(f"Unsupported observe_frame_source: {self.observe_frame_source}.")
         self._dataset_path = Path(dataset_path)
         self._dataset_name = self._dataset_path.name
         if isinstance(embodiment_tag, EmbodimentTag):
@@ -431,7 +410,8 @@ class LeRobotSingleDataset(Dataset):
         """
         all_steps: list[tuple[int, int]] = []
         for trajectory_id, trajectory_length in zip(self.trajectory_ids, self.trajectory_lengths):
-            for base_index in range(trajectory_length):
+            start_index = self.observe_frame_num if self.add_observe_frames else 0
+            for base_index in range(start_index, trajectory_length):
                 all_steps.append((trajectory_id, base_index))
         return all_steps
 
@@ -571,6 +551,7 @@ class LeRobotSingleDataset(Dataset):
         data = {}
         # Get the data for all modalities
         self.curr_traj_data = self.get_trajectory_data(trajectory_id)
+        self.curr_traj_id = trajectory_id
         for modality in self.modality_keys:
             # Get the data corresponding to each key in the modality
             for key in self.modality_keys[modality]:
@@ -588,7 +569,9 @@ class LeRobotSingleDataset(Dataset):
                 episode_chunk=chunk_index, episode_index=trajectory_id
             )
             assert parquet_path.exists(), f"Parquet file not found at {parquet_path}"
-            return pd.read_parquet(parquet_path)
+            self.curr_traj_id = trajectory_id
+            self.curr_traj_data = pd.read_parquet(parquet_path)
+            return self.curr_traj_data
 
     def get_trajectory_index(self, trajectory_id: int) -> int:
         """Get the index of the trajectory in the dataset by the trajectory ID.
@@ -705,75 +688,57 @@ class LeRobotSingleDataset(Dataset):
         # Get the corresponding video timestamps from the step indices
         video_timestamp = timestamp[step_indices]
 
-        frames = get_frames_by_timestamps(
-            video_path.as_posix(),
-            video_timestamp,
-            video_backend=self.video_backend,
-            video_backend_kwargs=self.video_backend_kwargs,
-        ) # ndarray format frames, shape: (T, H, W, C)
+        if self.add_observe_frames:
+            if len(step_indices) != 1:
+                raise ValueError(
+                    f"Adjacent-history baseline expects a single current frame, got {len(step_indices)} steps."
+                )
+            observe_frames = self.get_adjacent_observe_frames(trajectory_id, key, base_index)
+            current_frames = get_frames_by_timestamps(
+                video_path.as_posix(),
+                video_timestamp,
+                video_backend=self.video_backend,
+                video_backend_kwargs=self.video_backend_kwargs,
+            )  # ndarray format frames, shape: (T, H, W, C)
+            frames = np.concatenate([observe_frames, current_frames], axis=0)
+        else:
+            frames = get_frames_by_timestamps(
+                video_path.as_posix(),
+                video_timestamp,
+                video_backend=self.video_backend,
+                video_backend_kwargs=self.video_backend_kwargs,
+            )  # ndarray format frames, shape: (T, H, W, C)
 
-   
+    
         size = 256
         frames = np.stack(
             [cv2.resize(frame, (size, size), interpolation=cv2.INTER_LINEAR) for frame in frames],
             axis=0
         )  # shape: (T, size, size, 3)
-
-        if self.add_observe_frames:
-            observe_frames = self._get_observe_frames(video_path)
-            frames = np.concatenate([observe_frames, frames], axis=0)
         return frames
 
-    def _get_observe_frames(self, video_path: Path) -> np.ndarray:
-        cache_key = (
+    def get_adjacent_observe_frames(
+        self,
+        trajectory_id: int,
+        key: str,
+        base_index: int,
+    ) -> np.ndarray:
+        if base_index < self.observe_frame_num:
+            raise ValueError(
+                f"Adjacent-history baseline requires base_index >= {self.observe_frame_num}, got {base_index}."
+            )
+        traj_data = self.get_trajectory_data(trajectory_id)
+        assert "timestamp" in traj_data.columns, f"No timestamp found in {trajectory_id=}"
+        history_indices = np.arange(base_index - self.observe_frame_num, base_index)
+        history_timestamps = traj_data["timestamp"].to_numpy()[history_indices]
+        video_key = key.replace("video.", "")
+        video_path = self.get_video_path(trajectory_id, video_key)
+        return get_frames_by_timestamps(
             video_path.as_posix(),
-            self.observe_frame_source,
-            self.observe_frame_num,
-            self.observe_video_ratio,
+            history_timestamps,
+            video_backend=self.video_backend,
+            video_backend_kwargs=self.video_backend_kwargs,
         )
-        if cache_key in self._observe_frame_cache:
-            self._observe_frame_cache.move_to_end(cache_key)
-            return self._observe_frame_cache[cache_key].copy()
-
-        if self.observe_frame_source == "videos_obs":
-            obs_video_path = Path(video_path.as_posix().replace("/videos/", "/videos_obs/"))
-            if not obs_video_path.exists():
-                raise FileNotFoundError(f"Observation video not found: {obs_video_path}")
-            observe_frames = get_all_frames(
-                obs_video_path.as_posix(),
-                video_backend=self.video_backend,
-                video_backend_kwargs=self.video_backend_kwargs,
-                resize_size=(256, 256),
-            )
-        elif self.observe_frame_source == "video_prefix":
-            observe_frames = get_prefix_frames(
-                video_path.as_posix(),
-                prefix_ratio=self.observe_video_ratio,
-                min_frames=self.observe_frame_num,
-                video_backend=self.video_backend,
-                video_backend_kwargs=self.video_backend_kwargs,
-                resize_size=(256, 256),
-            )
-        else:
-            raise ValueError(f"Unsupported observe_frame_source: {self.observe_frame_source}.")
-
-        if len(observe_frames) < self.observe_frame_num:
-            raise ValueError(
-                f"Observation source produced {len(observe_frames)} frames, but {self.observe_frame_num} are required."
-            )
-
-        idx = np.linspace(0, len(observe_frames) - 1, self.observe_frame_num).astype(int)
-        sampled_observe_frames = observe_frames[idx]
-        if len(sampled_observe_frames) != self.observe_frame_num:
-            raise ValueError(
-                f"Expected {self.observe_frame_num} sampled observation frames, got {len(sampled_observe_frames)}."
-            )
-
-        self._observe_frame_cache[cache_key] = sampled_observe_frames.copy()
-        self._observe_frame_cache.move_to_end(cache_key)
-        if len(self._observe_frame_cache) > self.observe_frame_cache_size:
-            self._observe_frame_cache.popitem(last=False)
-        return sampled_observe_frames.copy()
 
     def get_state_or_action(
         self,

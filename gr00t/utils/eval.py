@@ -14,6 +14,7 @@
 # limitations under the License.
 import os
 import json
+import cv2
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
@@ -374,6 +375,12 @@ def get_and_send_action_baseline(
     print(f"The current used sample_frame_num is: {sample_frame_num}")
     if sample_frame_num != 5:
         raise ValueError(f"Baseline evaluation requires sample_frame_num=5, got {sample_frame_num}.")
+    if steps <= sample_frame_num:
+        print(
+            f"⚠️ Skipping traj_id={traj_id}, repeat={repeat_num}: "
+            f"trajectory length {steps} is not enough for {sample_frame_num} adjacent history frames."
+        )
+        return False
 
     # Get unity_meta corresponding to traj_id
     unity_meta = dataset.get_unity_meta(traj_id)
@@ -382,30 +389,7 @@ def get_and_send_action_baseline(
     gt_action_data = dataset.get_trajectory_data(traj_id)["action"].to_numpy()
     gt_action_data = np.array([frame.tolist() for frame in gt_action_data])[:,:3]
 
-    # Extract 20% of the video frames at the beginning and sample 5 frames
-    obs_sample_frames = extract_observation_by_video_length(traj_id, dataset, steps, 0.2, sample_frame_num)
-    if obs_sample_frames is None:
-        video_path = dataset.get_video_path(traj_id, "ego_view")
-        frames = get_all_frames(
-            video_path.as_posix(),
-            dataset.video_backend,
-            dataset.video_backend_kwargs,
-            (256, 256),
-        )[: int(steps * 0.2)]
-        print(
-            f"⚠️ Skipping traj_id={traj_id}, repeat={repeat_num}: "
-            f"observation phase has only {len(frames)} frames, but {sample_frame_num} are required."
-        )
-        return False
-    obs_sample_frames = np.asarray(obs_sample_frames)
-    if obs_sample_frames.shape[0] != sample_frame_num:
-        raise ValueError(
-            f"Expected {sample_frame_num} observation frames, got {obs_sample_frames.shape[0]}."
-        )
-
-    # Important‼️: The new interface used by baseline, because the input steps is 1.2 times the total number of frames in the episode, so we need to first calculate the original total number of frames, and then calculate the starting frame index
-    ori_total_frames = (steps * 5 + 5) // 6 # y = 1.2 * x；则x = (y * 5 + 5) // 6
-    start_frame_idx = int(ori_total_frames * 0.2)
+    start_frame_idx = sample_frame_num
     
     # Send start episode signal using synchronous version
     print(f"start_frame_idx / total_frames: {start_frame_idx} / {steps}")
@@ -431,7 +415,21 @@ def get_and_send_action_baseline(
             if ego_cur.shape[0] != 1:
                 raise ValueError(f"Baseline evaluation expects a single current frame, got {ego_cur.shape}.")
 
-            obs_sample_frames_uint8 = obs_sample_frames.astype(ego_cur.dtype)
+            obs_history_frames = dataset.get_adjacent_observe_frames(
+                traj_id,
+                "video.ego_view",
+                step_count,
+            )
+            target_height = ego_cur.shape[1]
+            target_width = ego_cur.shape[2]
+            obs_history_frames = np.stack(
+                [
+                    cv2.resize(frame, (target_width, target_height), interpolation=cv2.INTER_LINEAR)
+                    for frame in obs_history_frames
+                ],
+                axis=0,
+            )
+            obs_sample_frames_uint8 = obs_history_frames.astype(ego_cur.dtype)
             ego_seq = np.concatenate(
                 [obs_sample_frames_uint8, ego_cur],
                 axis=0
@@ -499,7 +497,7 @@ def get_and_send_action_baseline(
         **metrics,  # expand two metrics
         **metrics_unity,  # expand 4 metrics
         # "is_rotating": is_rotating,
-        "successIndex / total_frames": f"{successIndex} / {ori_total_frames}",
+        "successIndex / total_frames": f"{successIndex} / {steps}",
     }
     with open(os.path.join(metrics_json_path), "a") as f:
         f.write(json.dumps(result) + "\n")

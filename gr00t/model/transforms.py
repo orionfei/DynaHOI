@@ -280,8 +280,8 @@ class GR00TTransform(InvertibleModalityTransform):
     def _build_baseline_conversation(self, eagle_image_objs: list[dict], lang: str) -> list[dict]:
         if self.baseline_motion_hint == "none":
             prompt_prefix = (
-                "The first five images are observation history frames uniformly sampled from the "
-                "episode's early observation phase. The last image is the current frame.\n"
+                "The first five images are the five adjacent frames immediately before the "
+                "current observation. The last image is the current frame.\n"
                 "Observation history:\n"
             )
             return [
@@ -294,8 +294,8 @@ class GR00TTransform(InvertibleModalityTransform):
 
         if self.baseline_motion_hint == "diff_map_and_crop":
             prompt_prefix = (
-                "The first five images are observation history frames uniformly sampled from the "
-                "episode's early observation phase. The next two images are change cues where "
+                "The first five images are the five adjacent frames immediately before the "
+                "current observation. The next two images are change cues where "
                 "regions with larger changes indicate the moving object's motion trajectory. "
                 "The last image is the current frame.\n"
                 "Observation history:\n"
