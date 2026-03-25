@@ -77,10 +77,10 @@ class ArgsConfig:
     """Configuration for GR00T model fine-tuning."""
 
     # Dataset parameters
-    dataset_path: List[str] = field(default_factory=lambda: ["/mnt/sdc/bch/forBenchmark/Isaac-GR00T/demo_data/unity_train_0.10_cam_18dim"])
+    dataset_path: List[str] = field(default_factory=lambda: ["/data1/yfl_data/dyana_full_data"])
     """Path to the dataset directory or directories"""
 
-    output_dir: str = "/mnt/sdc/bch/forBenchmark/Isaac-GR00T/exp/gr00t_hand/unity_0.10_cam_18dim"
+    output_dir: str = "/data1/yfl_data/DynaHOI/gr00t/checkpoints"
     """Directory to save model checkpoints."""
 
     data_config: Literal[tuple(DATA_CONFIG_MAP.keys())] = "mano_18dim"

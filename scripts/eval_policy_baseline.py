@@ -25,7 +25,7 @@ import numpy as np
 import tyro
 import random
 import torch
- # 定死种子
+# 定死种子
 SEED = 2025
 random.seed(SEED)
 np.random.seed(SEED)
@@ -39,13 +39,27 @@ print(f"Using seed: {SEED}")
 
 
 from gr00t.data.dataset import LeRobotSingleDataset
+from gr00t.data.transform.base import ComposedModalityTransform
 from gr00t.data.embodiment_tags import EMBODIMENT_TAG_MAPPING
 from gr00t.eval.robot import RobotInferenceClient
 from gr00t.experiment.data_config import DATA_CONFIG_MAP
 from gr00t.model.policy import BasePolicy, Gr00tPolicy
+from gr00t.model.transforms import GR00TTransform
 from gr00t.utils.eval import get_and_send_action_baseline
 
 warnings.simplefilter("ignore", category=FutureWarning)
+
+
+def set_baseline_motion_hint(transform: ComposedModalityTransform, baseline_motion_hint: str):
+    gr00t_transforms = [t for t in transform.transforms if isinstance(t, GR00TTransform)]
+    if len(gr00t_transforms) != 1:
+        raise ValueError(f"Expected exactly one GR00TTransform, found {len(gr00t_transforms)}.")
+
+    gr00t_transform = gr00t_transforms[0]
+    if gr00t_transform.vlm_type != "baseline":
+        raise ValueError(f"Expected baseline GR00TTransform, got {gr00t_transform.vlm_type}.")
+
+    gr00t_transform.baseline_motion_hint = baseline_motion_hint
 
 """
 Example command:
@@ -88,22 +102,28 @@ class ArgsConfig:
     video_backend: Literal["decord", "torchvision_av"] = "decord"
     """Video backend to use for various codec options. h264: decord or av: torchvision_av"""
 
-    dataset_path: str = "demo_data/unity_test_1.0_cam_18dim"
+    dataset_path: str = "/data1/yfl_data/Dyana_data/test"
     """Path to the dataset."""
 
     embodiment_tag: Literal[tuple(EMBODIMENT_TAG_MAPPING.keys())] = "new_embodiment"
     """Embodiment tag to use."""
 
-    model_path: str = "exp/gr00t_hand/unity_train_1.0_cam_18dim_smol_v21_clear_baseline1216:19_unity_train_1.0_cam_18dim_smol_v21_clear_baseline/checkpoint-30000"
+    model_path: str = "/data1/yfl_data/DynaHOI/gr00t/checkpoints/motion_hint/v1/checkpoint-8750"
     """Path to the model checkpoint."""
+
+    baseline_motion_hint: Literal["none", "diff_map_and_crop"] = "none"
+    """Optional motion hint for baseline VLM processing."""
+
+    sample_frame_num: int = 5
+    """Number of uniformly sampled observation frames for baseline evaluation."""
     
     denoising_steps: int = 4
     """Number of denoising steps to use."""
 
-    evaluation_output_path: str = "/mnt/sdc/bch/forBenchmark/Isaac-GR00T/evaluation_results_improve"
+    evaluation_output_path: str = "/data1/yfl_data/DynaHOI/scripts/evaluation_results"
     """Path to save the evaluation results."""
 
-    improve_info: str = "allframes_first20%_sampleallframes_1.2xsteps_discrete_image_prompt_0112"
+    improve_info: str = "uniform5_baseline"
 
 def main(args: ArgsConfig):
     data_config = DATA_CONFIG_MAP[args.data_config]
@@ -118,6 +138,7 @@ def main(args: ArgsConfig):
 
         modality_config = data_config.modality_config()
         modality_transform = data_config.transform()
+        set_baseline_motion_hint(modality_transform, args.baseline_motion_hint)
 
         torch.cuda.manual_seed(2025)
         policy: BasePolicy = Gr00tPolicy(
@@ -174,6 +195,9 @@ def main(args: ArgsConfig):
     server = UnityServer(host="127.0.0.1", port=8765, resize_size=resize_size)
     loop.run_until_complete(server.start())
 
+    if args.sample_frame_num != 5:
+        raise ValueError(f"Baseline evaluation requires sample_frame_num=5, got {args.sample_frame_num}.")
+
     # create directory if not exist
     additional_info_data = args.dataset_path.split("/")[-1].replace("_unity", "")
     additional_info_model = args.model_path.split("/")[-1].replace("unity", "")
@@ -182,8 +206,9 @@ def main(args: ArgsConfig):
         additional_info_model = additional_info_model_2 + "-" + additional_info_model
 
     # baseline
-    traj_store_path = os.path.join(args.evaluation_output_path, "trajectories", f"{additional_info_model}:{args.improve_info}")
-    metrics_json_path = os.path.join(args.evaluation_output_path, f"results_{additional_info_model}:{args.improve_info}.jsonl")
+    result_tag = f"{args.improve_info}:motionhint_{args.baseline_motion_hint}"
+    traj_store_path = os.path.join(args.evaluation_output_path, "trajectories", f"{additional_info_model}:{result_tag}")
+    metrics_json_path = os.path.join(args.evaluation_output_path, f"results_{additional_info_model}:{result_tag}.jsonl")
 
 
     os.makedirs(traj_store_path, exist_ok=True)
@@ -227,7 +252,7 @@ def main(args: ArgsConfig):
                     action_horizon=args.action_horizon,
                     metrics_json_path = metrics_json_path,
                     traj_store_path = traj_store_path,
-                    sample_frame_num=1000,
+                    sample_frame_num=args.sample_frame_num,
                 )
         end_time = time.time()
         print(f"🕙 Time taken: {end_time - start_time} seconds")

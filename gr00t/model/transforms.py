@@ -134,6 +134,10 @@ class GR00TTransform(InvertibleModalityTransform):
         default="base", 
         description="Choice of VLM processing logic: 'base' or 'baseline'"
     )
+    baseline_motion_hint: Literal["none", "diff_map_and_crop"] = Field(
+        default="none",
+        description="Optional motion hint for baseline VLM processing.",
+    )
 
     def set_metadata(self, dataset_metadata: DatasetMetadata):
         """Set the metadata for the transform."""
@@ -224,89 +228,125 @@ class GR00TTransform(InvertibleModalityTransform):
         return inputs
 
 
-    def _apply_vlm_processing_baseline(self, batch: dict) -> dict: 
+    def _validate_baseline_images(self, images: np.ndarray) -> None:
+        if images.ndim != 5:
+            raise ValueError(f"Baseline VLM expects images with shape [V, T, C, H, W], got {images.shape}.")
+        if images.shape[0] != 1:
+            raise ValueError(f"Baseline VLM expects a single video stream, got {images.shape[0]}.")
+        if images.shape[1] != 6:
+            raise ValueError(f"Baseline VLM expects 6 frames (5 observation + 1 current), got {images.shape[1]}.")
+
+    def _compute_baseline_diff_map(self, history_images: np.ndarray, current_image: np.ndarray) -> np.ndarray:
+        current_float = current_image.astype(np.float32)
+        history_float = history_images.astype(np.float32)
+        diff_stack = np.abs(history_float - current_float[None, ...])
+        aggregated_diff = np.max(diff_stack, axis=0)
+        motion_energy = aggregated_diff.mean(axis=2)
+        diff_map = np.repeat(np.rint(motion_energy)[..., None], 3, axis=2).astype(np.uint8)
+        return diff_map
+
+    def _compute_baseline_motion_crop(self, motion_energy: np.ndarray, current_image: np.ndarray) -> np.ndarray:
+        total_energy = float(motion_energy.sum(dtype=np.float64))
+        if total_energy <= 0.0:
+            raise ValueError("Baseline motion hint requires positive motion energy.")
+
+        height, width = motion_energy.shape
+        ys, xs = np.indices((height, width), dtype=np.float32)
+        center_x = float((motion_energy * xs).sum(dtype=np.float64) / total_energy)
+        center_y = float((motion_energy * ys).sum(dtype=np.float64) / total_energy)
+
+        dx = xs - center_x
+        dy = ys - center_y
+        var_x = float((motion_energy * dx * dx).sum(dtype=np.float64) / total_energy)
+        var_y = float((motion_energy * dy * dy).sum(dtype=np.float64) / total_energy)
+        half_extent = int(np.ceil(np.sqrt(max(var_x, var_y))))
+        if half_extent < 1:
+            half_extent = 1
+
+        center_x_int = int(np.rint(center_x))
+        center_y_int = int(np.rint(center_y))
+        x1 = max(center_x_int - half_extent, 0)
+        x2 = min(center_x_int + half_extent + 1, width)
+        y1 = max(center_y_int - half_extent, 0)
+        y2 = min(center_y_int + half_extent + 1, height)
+
+        if x1 >= x2 or y1 >= y2:
+            raise ValueError(f"Invalid baseline motion crop bounds: {(x1, x2, y1, y2)}.")
+
+        motion_crop = current_image[y1:y2, x1:x2]
+        resized_motion_crop = Image.fromarray(motion_crop).resize((width, height), resample=Image.BILINEAR)
+        return np.asarray(resized_motion_crop, dtype=np.uint8)
+
+    def _build_baseline_conversation(self, eagle_image_objs: list[dict], lang: str) -> list[dict]:
+        if self.baseline_motion_hint == "none":
+            return [
+                {"type": "text", "text": "Observe the motion trajectory:\n"},
+                *eagle_image_objs[:-1],
+                {"type": "text", "text": "\nNow, in this current frame "},
+                eagle_image_objs[-1],
+                {"type": "text", "text": f", {lang}."},
+            ]
+
+        if self.baseline_motion_hint == "diff_map_and_crop":
+            return [
+                {"type": "text", "text": "Observe the motion trajectory:\n"},
+                *eagle_image_objs[:5],
+                {"type": "text", "text": "\nThese two images highlight where the scene changed most:\n"},
+                eagle_image_objs[5],
+                eagle_image_objs[6],
+                {"type": "text", "text": "\nNow, in this current frame "},
+                eagle_image_objs[7],
+                {"type": "text", "text": f", {lang}."},
+            ]
+
+        raise ValueError(f"Invalid baseline_motion_hint: {self.baseline_motion_hint}")
+
+    def _apply_vlm_processing_baseline(self, batch: dict) -> dict:
         """
         Args:
             batch:
                 video: [V, T, C, H, W]
         Returns: required input with the format `BatchFeature`
         """
-        # -------------------------------------------------------------------------
-        # prompt strategy switch: set to 1 or 2
-        # 1: continuous visual flow (most stable, recommended to try first)
-        # 2: interleaved image-text flow (emphasizes current frame, stronger logical coherence)
-
-        PROMPT_STRATEGY = 2 
-        # -------------------------------------------------------------------------
-
-        images = batch["images"]  # [V, T, C, H, W]
-        
-        # merge V, T dimensions, form [11, C, H, W] (assume V=1, T=11)
+        images = batch["images"]
+        self._validate_baseline_images(images)
         np_images = rearrange(images, "v t c h w -> (t v) c h w")
-        
-        # origin instruction, such as "grab the object..."
+
+        if self.baseline_motion_hint == "diff_map_and_crop":
+            history_images = np.transpose(np_images[:5], (0, 2, 3, 1))
+            current_image = np.transpose(np_images[5], (1, 2, 0))
+            diff_map = self._compute_baseline_diff_map(history_images, current_image)
+            motion_energy = diff_map[..., 0].astype(np.float32)
+            motion_crop = self._compute_baseline_motion_crop(motion_energy, current_image)
+            diff_map_chw = np.transpose(diff_map, (2, 0, 1))
+            motion_crop_chw = np.transpose(motion_crop, (2, 0, 1))
+            np_images = np.concatenate(
+                [np_images[:5], diff_map_chw[None, ...], motion_crop_chw[None, ...], np_images[5:6]],
+                axis=0,
+            )
+
         lang = batch["language"]
         if isinstance(lang, list):
             lang = lang[0]
-        
+
         eagle_images_pil = [Image.fromarray(np.transpose(v, (1, 2, 0))) for v in np_images]
-        
-        # eagle_image_objs contains all observation frames and current frame
         eagle_image_objs = [{"type": "image", "image": img} for img in eagle_images_pil]
+        conversation_content = self._build_baseline_conversation(eagle_image_objs, lang)
 
-        conversation_content = []
-
-        if PROMPT_STRATEGY == 1:
-            # === priority 1: continuous visual flow ===
-            # format: <img1>...<img11> + "Given the motion history..., {lang} in the last frame."
-            
-            # 1. put all images (0-10 frames)
-            conversation_content.extend(eagle_image_objs)
-            
-            # 2. construct instruction text
-            # note: here assume lang is the original action instruction, such as "grab the object..."
-            # we concatenate it to the prompt template
-            full_text = f"Given the motion history in the video, {lang} in the last frame."
-            conversation_content.append({"type": "text", "text": full_text})
-
-        elif PROMPT_STRATEGY == 2:
-            # === priority 2: interleaved image-text flow ===
-            # format: "Observe..." + <img1-10> + "Now..." + <img11> + ", {lang}."
-            
-            # 1. guide word
-            conversation_content.append({"type": "text", "text": "Observe the motion trajectory:\n"})
-            
-            # 2. put history frames
-            conversation_content.extend(eagle_image_objs[:-1])
-            
-            # 3. connect word
-            conversation_content.append({"type": "text", "text": "\nNow, in this current frame "})
-            
-            # 4. put current frame
-            conversation_content.append(eagle_image_objs[-1])
-            
-            # 5. final instruction
-            conversation_content.append({"type": "text", "text": f", {lang}."})
-
-        else:
-            # fallback: original simple logic
-            conversation_content = eagle_image_objs + [{"type": "text", "text": lang}]
-
-        # build final conversation structure
         eagle_conversation = [
             {
                 "role": "user",
                 "content": conversation_content,
             }
         ]
-        
+
         text_list = [
             self.eagle_processor.apply_chat_template(
                 eagle_conversation, tokenize=False, add_generation_prompt=True
             )
         ]
         image_inputs, video_inputs = self.eagle_processor.process_vision_info(eagle_conversation)
-        
+
         eagle_content = {
             "image_inputs": image_inputs,
             "video_inputs": video_inputs,
@@ -409,6 +449,11 @@ class GR00TTransform(InvertibleModalityTransform):
         images = images.astype(np.uint8)
         language = self._prepare_language(data)
         batch_data = {"images": images, "language": language}
+
+        if self.vlm_type != "baseline" and self.baseline_motion_hint != "none":
+            raise ValueError(
+                f"baseline_motion_hint={self.baseline_motion_hint} requires vlm_type='baseline', got {self.vlm_type}."
+            )
 
         if self.vlm_type == "base":
             vlm_outputs = self._apply_vlm_processing(batch_data) 

@@ -24,13 +24,26 @@ from gr00t.data.schema import EmbodimentTag
 from gr00t.experiment.data_config import DATA_CONFIG_MAP
 from gr00t.experiment.runner import TrainRunner
 from gr00t.model.gr00t_n1 import GR00T_N1_5
-from gr00t.model.transforms import EMBODIMENT_TAG_MAPPING
+from gr00t.data.transform.base import ComposedModalityTransform
+from gr00t.model.transforms import EMBODIMENT_TAG_MAPPING, GR00TTransform
 from gr00t.utils.peft import get_lora_model
 
 from datetime import datetime
 from zoneinfo import ZoneInfo
 import csv
 import json
+
+def set_baseline_motion_hint(transform: ComposedModalityTransform, baseline_motion_hint: str):
+    gr00t_transforms = [t for t in transform.transforms if isinstance(t, GR00TTransform)]
+    if len(gr00t_transforms) != 1:
+        raise ValueError(f"Expected exactly one GR00TTransform, found {len(gr00t_transforms)}.")
+
+    gr00t_transform = gr00t_transforms[0]
+    if gr00t_transform.vlm_type != "baseline":
+        raise ValueError(f"Expected baseline GR00TTransform, got {gr00t_transform.vlm_type}.")
+
+    gr00t_transform.baseline_motion_hint = baseline_motion_hint
+
 
 def save_model_param_info(model: torch.nn.Module, save_path: str):
     """
@@ -68,10 +81,10 @@ class ArgsConfig:
     """Configuration for GR00T model fine-tuning."""
 
     # Dataset parameters
-    dataset_path: List[str] = field(default_factory=lambda: ["demo_data/unity_train_1.0_cam_18dim_smol_v21_clear_baseline"])
+    dataset_path: List[str] = field(default_factory=lambda: ["/data1/yfl_data/Dyana_data/train"])
     """Path to the dataset directory or directories"""
 
-    output_dir: str = "exp/gr00t_hand/unity_train_1.0_cam_18dim_smol_v21_clear_baseline"
+    output_dir: str = "/data1/yfl_data/DynaHOI/gr00t/checkpoints/motion_hint/"
     """Directory to save model checkpoints."""
 
     data_config: Literal[tuple(DATA_CONFIG_MAP.keys())] = "mano_18dim_baseline" # ObAct baseline
@@ -81,17 +94,17 @@ class ArgsConfig:
     batch_size: int = 8
     """Batch size per GPU for training."""
 
-    max_steps: int = 100000
+    max_steps: int = 8750
     """Maximum number of training steps."""
 
-    num_gpus: int = 4
+    num_gpus: int = 2
     """Number of GPUs to use for training."""
 
-    save_steps: int = 60000
+    save_steps: int = 1000
     """Number of steps between saving checkpoints."""
 
     # Model parameters
-    base_model_path: str = "/mnt/sdc/bch/forBenchmark/Isaac-GR00T/checkpoints/nvidia/GR00T-N1.5-3B"
+    base_model_path: str = "/data1/yfl_data/DynaHOI/gr00t/checkpoints/ObAct"
     """Path or HuggingFace model ID for the base model."""
 
     tune_llm: bool = False
@@ -131,10 +144,10 @@ class ArgsConfig:
     lora_full_model: bool = False
     """Whether to use the full model for LORA. If False, only the action head will be trained."""
 
-    dataloader_num_workers: int = 4
+    dataloader_num_workers: int = 2
     """Number of workers for data loading."""
 
-    report_to: Literal["wandb", "tensorboard", "azure_ml"] = "none" # set "none" for debug，"wandb" for train
+    report_to: Literal["wandb", "tensorboard", "azure_ml"] = "wandb" # set "none" for debug，"wandb" for train
     """Where to report training metrics (e.g., 'wandb', 'tensorboard', 'azure_ml')."""
 
     # Data loading parameters
@@ -143,6 +156,21 @@ class ArgsConfig:
 
     video_backend: Literal["decord", "torchvision_av"] = "decord"
     """Video backend to use for training. [decord, torchvision_av]"""
+
+    baseline_motion_hint: Literal["none", "diff_map_and_crop"] = "none"
+    """Optional motion hint for baseline VLM processing."""
+
+    observe_frame_source: Literal["videos_obs", "video_prefix"] = "video_prefix"
+    """Source used to construct baseline observation frames."""
+
+    observe_frame_num: int = 5
+    """Number of prepended observation frames."""
+
+    observe_video_ratio: float = 0.2
+    """Prefix ratio used when observe_frame_source == 'video_prefix'."""
+
+    observe_frame_cache_size: int = 1024
+    """Number of episodes whose sampled observation frames are cached per worker."""
 
     # Mixture dataset parameters
     balance_dataset_weights: bool = True
@@ -175,6 +203,7 @@ def main(config: ArgsConfig):
     data_config_cls = DATA_CONFIG_MAP[config.data_config]
     modality_configs = data_config_cls.modality_config()
     transforms = data_config_cls.transform()
+    set_baseline_motion_hint(transforms, config.baseline_motion_hint)
 
     # 1.2 data loader: we will use either single dataset or mixture dataset
     train_dataset = LeRobotSingleDataset(
@@ -183,7 +212,11 @@ def main(config: ArgsConfig):
         transforms=transforms,
         embodiment_tag=embodiment_tag,  # This will override the dataset's embodiment tag to "new_embodiment"
         video_backend=config.video_backend,
-        add_observe_frames=True # for ObAct
+        add_observe_frames=True,
+        observe_frame_source=config.observe_frame_source,
+        observe_frame_num=config.observe_frame_num,
+        observe_video_ratio=config.observe_video_ratio,
+        observe_frame_cache_size=config.observe_frame_cache_size,
     )
        
 
@@ -200,60 +233,38 @@ def main(config: ArgsConfig):
         tune_diffusion_model=config.tune_diffusion_model,  # action head's DiT
     )
 
-    # Update action_horizon to match data config
-    # Need to recreate action head with correct config since it was initialized with old config
-    if data_action_horizon != model.action_head.config.action_horizon: # no
-        print(
-            f"Recreating action head with action_horizon {data_action_horizon} (was {model.action_head.config.action_horizon})"
+    expected_action_dim = 18
+    expected_action_horizon = 16
+
+    if data_action_horizon != expected_action_horizon:
+        raise ValueError(
+            f"Unexpected data action horizon: {data_action_horizon}. "
+            f"Expected {expected_action_horizon} for baseline continuation finetuning."
         )
 
-        # Update the action head config
-        new_action_head_config = model.action_head.config
-        new_action_head_config.action_horizon = data_action_horizon
-
-        # Import the FlowmatchingActionHead class
-        from gr00t.model.action_head.flow_matching_action_head import (
-            FlowmatchingActionHead,
+    if model.action_dim != expected_action_dim:
+        raise ValueError(
+            f"Unexpected model action_dim: {model.action_dim}. "
+            f"Expected {expected_action_dim} from ObAct checkpoint."
         )
 
-        # Create new action head with updated config
-        new_action_head = FlowmatchingActionHead(new_action_head_config)
-
-        # Copy the weights from the old action head to the new one
-        new_action_head.load_state_dict(model.action_head.state_dict(), strict=False)
-
-        # Replace the action head
-        model.action_head = new_action_head
-
-        # Update model config AND the action_head_cfg dictionary that gets saved
-        model.config.action_horizon = data_action_horizon
-        model.action_horizon = data_action_horizon
-        model.config.action_head_cfg["action_horizon"] = data_action_horizon
-
-        # Set trainable parameters for the new action head
-        model.action_head.set_trainable_parameters(
-            tune_projector=config.tune_projector, tune_diffusion_model=config.tune_diffusion_model
+    if model.action_horizon != expected_action_horizon:
+        raise ValueError(
+            f"Unexpected model action_horizon: {model.action_horizon}. "
+            f"Expected {expected_action_horizon} from ObAct checkpoint."
         )
 
-    from gr00t.model.action_head.flow_matching_action_head import (
-            FlowmatchingActionHead,
+    if model.action_head.config.action_dim != expected_action_dim:
+        raise ValueError(
+            f"Unexpected action head config action_dim: {model.action_head.config.action_dim}. "
+            f"Expected {expected_action_dim} from ObAct checkpoint."
         )
-    new_action_head_config = model.action_head.config
-    new_action_head_config.action_dim = 18
-    new_action_head_config.action_horizon = 16
-    new_action_head_config.max_action_dim = 18
-    new_action_head_config.max_state_dim = 18
 
-
-    old_dit = model.action_head.model # using origin DiT weights
-
-    # new Flowmatching for HOI
-    new_action_head = FlowmatchingActionHead(new_action_head_config)
-    new_action_head.model = old_dit
-    model.action_head = new_action_head
-    
-    model.config.action_horizon = 16
-    model.action_dim = 18
+    if model.action_head.config.action_horizon != expected_action_horizon:
+        raise ValueError(
+            f"Unexpected action head config action_horizon: {model.action_head.config.action_horizon}. "
+            f"Expected {expected_action_horizon} from ObAct checkpoint."
+        )
 
     # Set the model's compute_dtype to bfloat16
     model.compute_dtype = "bfloat16"

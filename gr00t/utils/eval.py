@@ -215,7 +215,7 @@ def extract_observation_video(traj_id: int, dataset: LeRobotSingleDataset, obs_f
 
 def extract_observation_by_video_length(traj_id: int, dataset: LeRobotSingleDataset, video_length, video_sample_rate, sample_frames):
     """
-    Extract video of the observation phase and uniformly sample sample_frames frames
+    Extract video of the observation phase and uniformly sample sample_frames frames.
     """
     video_path = dataset.get_video_path(traj_id, "ego_view")
     video_length = int(video_length * video_sample_rate)
@@ -225,14 +225,18 @@ def extract_observation_by_video_length(traj_id: int, dataset: LeRobotSingleData
         dataset.video_backend_kwargs,
         (256, 256),
         )[:video_length]
-    
-    # 2. Uniformly sample sample_frames frames
-    if len(frames) <= sample_frames:
-        # Insufficient frames, return all directly
-        return frames
-    
-    idx = np.linspace(0, len(frames)-1, sample_frames).astype(int)
+
+    if len(frames) < sample_frames:
+        raise ValueError(
+            f"Observation phase has only {len(frames)} frames, but {sample_frames} are required."
+        )
+
+    idx = np.linspace(0, len(frames) - 1, sample_frames).astype(int)
     sampled_frames = frames[idx]
+    if len(sampled_frames) != sample_frames:
+        raise ValueError(
+            f"Expected {sample_frames} sampled observation frames, got {len(sampled_frames)}."
+        )
     return sampled_frames
     
 
@@ -370,6 +374,8 @@ def get_and_send_action_baseline(
     sample_frame_num = 5,
 ):
     print(f"The current used sample_frame_num is: {sample_frame_num}")
+    if sample_frame_num != 5:
+        raise ValueError(f"Baseline evaluation requires sample_frame_num=5, got {sample_frame_num}.")
 
     # Get unity_meta corresponding to traj_id
     unity_meta = dataset.get_unity_meta(traj_id)
@@ -381,6 +387,10 @@ def get_and_send_action_baseline(
     # Extract 20% of the video frames at the beginning and sample 5 frames
     obs_sample_frames = extract_observation_by_video_length(traj_id, dataset, steps, 0.2, sample_frame_num)
     obs_sample_frames = np.asarray(obs_sample_frames)
+    if obs_sample_frames.shape[0] != sample_frame_num:
+        raise ValueError(
+            f"Expected {sample_frame_num} observation frames, got {obs_sample_frames.shape[0]}."
+        )
 
     # Important‼️: The new interface used by baseline, because the input steps is 1.2 times the total number of frames in the episode, so we need to first calculate the original total number of frames, and then calculate the starting frame index
     ori_total_frames = (steps * 5 + 5) // 6 # y = 1.2 * x；则x = (y * 5 + 5) // 6
@@ -406,23 +416,30 @@ def get_and_send_action_baseline(
             obs = server.get_obs(block=True)
 
             # Put the contents of the observation frames into obs
-            ego_cur = obs["video.ego_view"]          # now it is (1, 256, 256, 3)
-            # Ensure dtype consistency
+            ego_cur = obs["video.ego_view"]
+            if ego_cur.shape[0] != 1:
+                raise ValueError(f"Baseline evaluation expects a single current frame, got {ego_cur.shape}.")
+
             obs_sample_frames_uint8 = obs_sample_frames.astype(ego_cur.dtype)
-            # Get 11 or 6 frame sequence: (10 or 5 observation + 1 current)
             ego_seq = np.concatenate(
-                [obs_sample_frames_uint8, ego_cur],   # (10 or 5, H, W, 3) + (1, H, W, 3)
+                [obs_sample_frames_uint8, ego_cur],
                 axis=0
             )
-            # Write back to obs
-            obs["video.ego_view"] = ego_seq          # shape = (11, 256, 256, 3)
+            if ego_seq.shape[0] != sample_frame_num + 1:
+                raise ValueError(
+                    f"Expected {sample_frame_num + 1} baseline frames after concatenation, got {ego_seq.shape[0]}."
+                )
+            obs["video.ego_view"] = ego_seq
 
 
 
             # Use unity metadata to complete obs (Unity side does not send)
             obs["annotation.human.action.task_description"] = [task_dict[unity_meta["task_type"]]]
 
-            if dataset.add_motion_vector:
+            add_motion_vector = getattr(dataset, "add_motion_vector", False)
+            if add_motion_vector:
+                if not hasattr(dataset, "get_motion_map"):
+                    raise AttributeError("Dataset enables motion vectors but does not implement get_motion_map.")
                 obs["video.motion_map"] = dataset.get_motion_map(traj_id, step_count)
             # === 3. Inference & collect predicted actions ===
             action_chunk = policy.get_action(obs)

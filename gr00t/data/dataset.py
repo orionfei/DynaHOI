@@ -26,9 +26,9 @@ See `scripts/load_dataset.py` for examples on how to use these datasets.
 
 import hashlib
 import json
-from collections import defaultdict
+from collections import OrderedDict, defaultdict
 from pathlib import Path
-from typing import Sequence
+from typing import Literal, Sequence
 
 import numpy as np
 import pandas as pd
@@ -36,7 +36,7 @@ from pydantic import BaseModel, Field, ValidationError
 from torch.utils.data import Dataset
 from tqdm import tqdm
 
-from gr00t.utils.video import get_all_frames, get_frames_by_timestamps
+from gr00t.utils.video import get_all_frames, get_frames_by_timestamps, get_prefix_frames
 
 from .embodiment_tags import EmbodimentTag
 from .schema import (
@@ -122,6 +122,10 @@ class LeRobotSingleDataset(Dataset):
         video_backend_kwargs: dict | None = None,
         transforms: ComposedModalityTransform | None = None,
         add_observe_frames: bool = False,
+        observe_frame_source: Literal["videos_obs", "video_prefix"] = "videos_obs",
+        observe_frame_num: int = 5,
+        observe_video_ratio: float = 0.2,
+        observe_frame_cache_size: int = 1024,
     ):
         """
         Initialize the dataset.
@@ -134,8 +138,11 @@ class LeRobotSingleDataset(Dataset):
             video_backend_kwargs (dict): Keyword arguments for the video backend when initializing the video reader.
             transforms (ComposedModalityTransform): The transforms to apply to the dataset.
             embodiment_tag (EmbodimentTag): Overload the embodiment tag for the dataset. e.g. define it as "new_embodiment"
-            
-            add_observe_frames (bool): using ObAct?
+            add_observe_frames (bool): Whether to prepend observation frames for baseline training.
+            observe_frame_source (Literal["videos_obs", "video_prefix"]): Source used to load observation frames.
+            observe_frame_num (int): Number of observation frames to prepend.
+            observe_video_ratio (float): Prefix ratio used when observe_frame_source == "video_prefix".
+            observe_frame_cache_size (int): Number of episodes whose sampled observation frames are cached per worker.
         """
         # first check if the path directory exists
         if not Path(dataset_path).exists():
@@ -147,7 +154,26 @@ class LeRobotSingleDataset(Dataset):
         self.transforms = (
             transforms if transforms is not None else ComposedModalityTransform(transforms=[])
         )
-        self.add_observe_frames = add_observe_frames # ObAct
+        self.add_observe_frames = add_observe_frames
+        self.observe_frame_source = observe_frame_source
+        self.observe_frame_num = observe_frame_num
+        self.observe_video_ratio = observe_video_ratio
+        self.observe_frame_cache_size = observe_frame_cache_size
+        self._observe_frame_cache: OrderedDict[tuple[str, str, int, float], np.ndarray] = OrderedDict()
+        if self.add_observe_frames:
+            if self.observe_frame_num <= 0:
+                raise ValueError(f"observe_frame_num must be positive, got {self.observe_frame_num}.")
+            if self.observe_frame_cache_size <= 0:
+                raise ValueError(
+                    f"observe_frame_cache_size must be positive, got {self.observe_frame_cache_size}."
+                )
+            if self.observe_frame_source == "video_prefix":
+                if not (0.0 < self.observe_video_ratio <= 1.0):
+                    raise ValueError(
+                        f"observe_video_ratio must be in (0, 1], got {self.observe_video_ratio}."
+                    )
+            elif self.observe_frame_source != "videos_obs":
+                raise ValueError(f"Unsupported observe_frame_source: {self.observe_frame_source}.")
         self._dataset_path = Path(dataset_path)
         self._dataset_name = self._dataset_path.name
         if isinstance(embodiment_tag, EmbodimentTag):
@@ -693,21 +719,61 @@ class LeRobotSingleDataset(Dataset):
             axis=0
         )  # shape: (T, size, size, 3)
 
-        # ObAct
         if self.add_observe_frames:
-            obs_video_path = video_path.as_posix().replace("videos", "videos_obs")
+            observe_frames = self._get_observe_frames(video_path)
+            frames = np.concatenate([observe_frames, frames], axis=0)
+        return frames
+
+    def _get_observe_frames(self, video_path: Path) -> np.ndarray:
+        cache_key = (
+            video_path.as_posix(),
+            self.observe_frame_source,
+            self.observe_frame_num,
+            self.observe_video_ratio,
+        )
+        if cache_key in self._observe_frame_cache:
+            self._observe_frame_cache.move_to_end(cache_key)
+            return self._observe_frame_cache[cache_key].copy()
+
+        if self.observe_frame_source == "videos_obs":
+            obs_video_path = Path(video_path.as_posix().replace("/videos/", "/videos_obs/"))
+            if not obs_video_path.exists():
+                raise FileNotFoundError(f"Observation video not found: {obs_video_path}")
             observe_frames = get_all_frames(
-                obs_video_path,
+                obs_video_path.as_posix(),
                 video_backend=self.video_backend,
                 video_backend_kwargs=self.video_backend_kwargs,
                 resize_size=(256, 256),
             )
-            # sample 5 frames evenly
-            idx = np.linspace(0, len(observe_frames)-1, 5).astype(int)
-            observe_frames = observe_frames[idx]
-            # concatenate
-            frames = np.concatenate([observe_frames, frames], axis=0)
-        return frames
+        elif self.observe_frame_source == "video_prefix":
+            observe_frames = get_prefix_frames(
+                video_path.as_posix(),
+                prefix_ratio=self.observe_video_ratio,
+                min_frames=self.observe_frame_num,
+                video_backend=self.video_backend,
+                video_backend_kwargs=self.video_backend_kwargs,
+                resize_size=(256, 256),
+            )
+        else:
+            raise ValueError(f"Unsupported observe_frame_source: {self.observe_frame_source}.")
+
+        if len(observe_frames) < self.observe_frame_num:
+            raise ValueError(
+                f"Observation source produced {len(observe_frames)} frames, but {self.observe_frame_num} are required."
+            )
+
+        idx = np.linspace(0, len(observe_frames) - 1, self.observe_frame_num).astype(int)
+        sampled_observe_frames = observe_frames[idx]
+        if len(sampled_observe_frames) != self.observe_frame_num:
+            raise ValueError(
+                f"Expected {self.observe_frame_num} sampled observation frames, got {len(sampled_observe_frames)}."
+            )
+
+        self._observe_frame_cache[cache_key] = sampled_observe_frames.copy()
+        self._observe_frame_cache.move_to_end(cache_key)
+        if len(self._observe_frame_cache) > self.observe_frame_cache_size:
+            self._observe_frame_cache.popitem(last=False)
+        return sampled_observe_frames.copy()
 
     def get_state_or_action(
         self,

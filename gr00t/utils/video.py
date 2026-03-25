@@ -125,6 +125,59 @@ def get_frames_by_timestamps(
         raise NotImplementedError
 
 
+def get_prefix_frames(
+    video_path: str,
+    prefix_ratio: float,
+    min_frames: int,
+    video_backend: str = "decord",
+    video_backend_kwargs: dict = {},
+    resize_size: tuple[int, int] | None = None,
+) -> np.ndarray:
+    """Get only the prefix frames from a video.
+    Args:
+        video_path (str): Path to the video file.
+        prefix_ratio (float): Ratio of frames to decode from the start of the video.
+        min_frames (int): Minimum number of prefix frames required.
+        video_backend (str, optional): Video backend to use. Defaults to "decord".
+        video_backend_kwargs (dict, optional): Keyword arguments for the video backend.
+        resize_size (tuple[int, int], optional): Resize size for the frames. Defaults to None.
+    """
+    if min_frames <= 0:
+        raise ValueError(f"min_frames must be positive, got {min_frames}.")
+    if not (0.0 < prefix_ratio <= 1.0):
+        raise ValueError(f"prefix_ratio must be in (0, 1], got {prefix_ratio}.")
+
+    if video_backend == "decord":
+        vr = decord.VideoReader(video_path, **video_backend_kwargs)
+        num_frames = len(vr)
+        if num_frames < min_frames:
+            raise ValueError(
+                f"Video contains only {num_frames} frames, but {min_frames} are required."
+            )
+        prefix_length = max(min_frames, int(np.ceil(num_frames * prefix_ratio)))
+        prefix_length = min(num_frames, prefix_length)
+        frames = vr.get_batch(range(prefix_length)).asnumpy()
+    else:
+        frames = get_all_frames(
+            video_path,
+            video_backend=video_backend,
+            video_backend_kwargs=video_backend_kwargs,
+            resize_size=None,
+        )
+        if len(frames) < min_frames:
+            raise ValueError(
+                f"Video contains only {len(frames)} frames, but {min_frames} are required."
+            )
+        prefix_length = max(min_frames, int(np.ceil(len(frames) * prefix_ratio)))
+        prefix_length = min(len(frames), prefix_length)
+        frames = frames[:prefix_length]
+
+    if resize_size is not None:
+        frames = [cv2.resize(frame, resize_size) for frame in frames]
+        frames = np.array(frames)
+    return frames
+
+
 def get_all_frames(
     video_path: str,
     video_backend: str = "decord",
