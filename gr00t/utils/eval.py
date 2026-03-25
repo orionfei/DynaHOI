@@ -227,9 +227,7 @@ def extract_observation_by_video_length(traj_id: int, dataset: LeRobotSingleData
         )[:video_length]
 
     if len(frames) < sample_frames:
-        raise ValueError(
-            f"Observation phase has only {len(frames)} frames, but {sample_frames} are required."
-        )
+        return None
 
     idx = np.linspace(0, len(frames) - 1, sample_frames).astype(int)
     sampled_frames = frames[idx]
@@ -386,6 +384,19 @@ def get_and_send_action_baseline(
 
     # Extract 20% of the video frames at the beginning and sample 5 frames
     obs_sample_frames = extract_observation_by_video_length(traj_id, dataset, steps, 0.2, sample_frame_num)
+    if obs_sample_frames is None:
+        video_path = dataset.get_video_path(traj_id, "ego_view")
+        frames = get_all_frames(
+            video_path.as_posix(),
+            dataset.video_backend,
+            dataset.video_backend_kwargs,
+            (256, 256),
+        )[: int(steps * 0.2)]
+        print(
+            f"⚠️ Skipping traj_id={traj_id}, repeat={repeat_num}: "
+            f"observation phase has only {len(frames)} frames, but {sample_frame_num} are required."
+        )
+        return False
     obs_sample_frames = np.asarray(obs_sample_frames)
     if obs_sample_frames.shape[0] != sample_frame_num:
         raise ValueError(
@@ -492,6 +503,7 @@ def get_and_send_action_baseline(
     }
     with open(os.path.join(metrics_json_path), "a") as f:
         f.write(json.dumps(result) + "\n")
+    return True
 
 
 def evaluate_traj2(traj: np.ndarray):

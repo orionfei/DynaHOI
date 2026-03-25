@@ -241,7 +241,7 @@ def main(args: ArgsConfig):
             print("=============================================")
             print(f"Running trajectory: {traj_id}, repeat: {i}")
             time.sleep(0.1) # Wait 0.1 seconds after each repeat for Unity to complete cleanup tasks
-            get_and_send_action_baseline(
+            completed = get_and_send_action_baseline(
                     server,
                     policy,
                     dataset,
@@ -254,6 +254,8 @@ def main(args: ArgsConfig):
                     traj_store_path = traj_store_path,
                     sample_frame_num=args.sample_frame_num,
                 )
+            if not completed:
+                continue
         end_time = time.time()
         print(f"🕙 Time taken: {end_time - start_time} seconds")
         total_time += end_time - start_time

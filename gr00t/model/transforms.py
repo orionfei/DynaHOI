@@ -279,24 +279,36 @@ class GR00TTransform(InvertibleModalityTransform):
 
     def _build_baseline_conversation(self, eagle_image_objs: list[dict], lang: str) -> list[dict]:
         if self.baseline_motion_hint == "none":
+            prompt_prefix = (
+                "The first five images are observation history frames uniformly sampled from the "
+                "episode's early observation phase. The last image is the current frame.\n"
+                "Observation history:\n"
+            )
             return [
-                {"type": "text", "text": "Observe the motion trajectory:\n"},
+                {"type": "text", "text": prompt_prefix},
                 *eagle_image_objs[:-1],
-                {"type": "text", "text": "\nNow, in this current frame "},
+                {"type": "text", "text": "\nCurrent frame:\n"},
                 eagle_image_objs[-1],
-                {"type": "text", "text": f", {lang}."},
+                {"type": "text", "text": f"\nTask: {lang}"},
             ]
 
         if self.baseline_motion_hint == "diff_map_and_crop":
+            prompt_prefix = (
+                "The first five images are observation history frames uniformly sampled from the "
+                "episode's early observation phase. The next two images are change cues where "
+                "regions with larger changes indicate the moving object's motion trajectory. "
+                "The last image is the current frame.\n"
+                "Observation history:\n"
+            )
             return [
-                {"type": "text", "text": "Observe the motion trajectory:\n"},
+                {"type": "text", "text": prompt_prefix},
                 *eagle_image_objs[:5],
-                {"type": "text", "text": "\nThese two images highlight where the scene changed most:\n"},
+                {"type": "text", "text": "\nChange cues showing the moving object's motion trajectory:\n"},
                 eagle_image_objs[5],
                 eagle_image_objs[6],
-                {"type": "text", "text": "\nNow, in this current frame "},
+                {"type": "text", "text": "\nCurrent frame:\n"},
                 eagle_image_objs[7],
-                {"type": "text", "text": f", {lang}."},
+                {"type": "text", "text": f"\nTask: {lang}"},
             ]
 
         raise ValueError(f"Invalid baseline_motion_hint: {self.baseline_motion_hint}")
