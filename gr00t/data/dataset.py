@@ -36,7 +36,7 @@ from pydantic import BaseModel, Field, ValidationError
 from torch.utils.data import Dataset
 from tqdm import tqdm
 
-from gr00t.utils.video import get_frames_by_timestamps
+from gr00t.utils.video import get_frames_by_timestamps, get_prefix_frame_count
 
 from .embodiment_tags import EmbodimentTag
 from .schema import (
@@ -59,6 +59,106 @@ LE_ROBOT_STATS_FILENAME = "meta/stats.json"
 LE_ROBOT_DATA_FILENAME = "data/*/*.parquet"
 
 LE_ROBOT_UNITY_META_DIR = "unity_meta"
+MOTION_HINT_CACHE_SUBDIR = "meta/motion_hint_farneback"
+MOTION_HINT_MANIFEST_FILENAME = "manifest.json"
+
+
+def _compute_motion_hint_frame_count(trajectory_length: int, motion_hint_ratio: float) -> int:
+    return get_prefix_frame_count(trajectory_length, motion_hint_ratio)
+
+
+def _aggregate_weighted_farneback_flows(flows: list[np.ndarray]) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    if len(flows) == 0:
+        raise ValueError("Motion hint aggregation requires at least one optical-flow field.")
+    if any(flow.ndim != 3 or flow.shape[2] != 2 for flow in flows):
+        raise ValueError(
+            f"Each optical-flow field must have shape [H, W, 2], got {[flow.shape for flow in flows]}."
+        )
+
+    weights = np.arange(1, len(flows) + 1, dtype=np.float32) / len(flows)
+    u_bar = np.zeros(flows[0].shape[:2], dtype=np.float32)
+    v_bar = np.zeros_like(u_bar)
+    for weight, flow in zip(weights, flows):
+        u_bar += weight * flow[..., 0]
+        v_bar += weight * flow[..., 1]
+    magnitude = np.sqrt(u_bar**2 + v_bar**2)
+    return u_bar, v_bar, magnitude
+
+
+def _encode_signed_motion_channel(channel: np.ndarray) -> np.ndarray:
+    max_abs = float(np.max(np.abs(channel)))
+    if max_abs <= 0.0:
+        raise ValueError("Signed motion channel is identically zero; cannot encode with max-abs mapping.")
+    encoded = ((channel / max_abs) + 1.0) * 127.5
+    return np.rint(encoded).astype(np.uint8)
+
+
+def _encode_positive_motion_channel(channel: np.ndarray) -> np.ndarray:
+    max_value = float(np.max(channel))
+    if max_value <= 0.0:
+        raise ValueError("Positive motion channel is identically zero; cannot encode to uint8.")
+    encoded = (channel / max_value) * 255.0
+    return np.rint(encoded).astype(np.uint8)
+
+
+def _encode_motion_hint(u_bar: np.ndarray, v_bar: np.ndarray, magnitude: np.ndarray) -> np.ndarray:
+    return np.stack(
+        [
+            _encode_signed_motion_channel(u_bar),
+            _encode_signed_motion_channel(v_bar),
+            _encode_positive_motion_channel(magnitude),
+        ],
+        axis=-1,
+    )
+
+
+def _format_motion_hint_ratio_tag(motion_hint_ratio: float) -> str:
+    return f"ratio_{motion_hint_ratio:.6f}".replace(".", "p")
+
+
+def get_motion_hint_cache_dir(dataset_path: Path | str, motion_hint_ratio: float) -> Path:
+    return Path(dataset_path) / MOTION_HINT_CACHE_SUBDIR / _format_motion_hint_ratio_tag(
+        motion_hint_ratio
+    )
+
+
+def get_motion_hint_manifest_path(cache_dir: Path | str) -> Path:
+    return Path(cache_dir) / MOTION_HINT_MANIFEST_FILENAME
+
+
+def get_motion_hint_image_path(cache_dir: Path | str, trajectory_id: int) -> Path:
+    return Path(cache_dir) / f"episode_{trajectory_id:06d}.png"
+
+
+def compute_motion_hint_from_frames(frames: np.ndarray) -> np.ndarray:
+    if frames.ndim != 4:
+        raise ValueError(f"Motion hint expects video frames with shape [T, H, W, C], got {frames.shape}.")
+    if frames.shape[0] < 2:
+        raise ValueError(f"Motion hint expects at least 2 video frames, got {frames.shape[0]}.")
+    if frames.shape[-1] != 3:
+        raise ValueError(f"Motion hint expects 3-channel RGB frames, got {frames.shape}.")
+    if frames.dtype != np.uint8:
+        raise ValueError(f"Motion hint expects uint8 video frames, got {frames.dtype}.")
+
+    grayscale_frames = [cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY) for frame in frames]
+    flows: list[np.ndarray] = []
+    for prev_frame, current_frame in zip(grayscale_frames[:-1], grayscale_frames[1:]):
+        flow = cv2.calcOpticalFlowFarneback(
+            prev_frame,
+            current_frame,
+            None,
+            0.5,
+            3,
+            15,
+            3,
+            5,
+            1.2,
+            0,
+        )
+        flows.append(flow)
+
+    u_bar, v_bar, magnitude = _aggregate_weighted_farneback_flows(flows)
+    return _encode_motion_hint(u_bar, v_bar, magnitude)
 
 
 def calculate_dataset_statistics(parquet_paths: list[Path]) -> dict:
@@ -123,6 +223,9 @@ class LeRobotSingleDataset(Dataset):
         transforms: ComposedModalityTransform | None = None,
         add_observe_frames: bool = False,
         observe_frame_num: int = 5,
+        use_motion_hint: bool = False,
+        motion_hint_ratio: float = 0.25,
+        motion_hint_num_frames: int = 6,
     ):
         """
         Initialize the dataset.
@@ -150,11 +253,28 @@ class LeRobotSingleDataset(Dataset):
         )
         self.add_observe_frames = add_observe_frames
         self.observe_frame_num = observe_frame_num
+        self.use_motion_hint = use_motion_hint
+        self.motion_hint_ratio = motion_hint_ratio
+        self.motion_hint_num_frames = motion_hint_num_frames
         if self.add_observe_frames:
             if self.observe_frame_num <= 0:
                 raise ValueError(f"observe_frame_num must be positive, got {self.observe_frame_num}.")
+        if self.use_motion_hint:
+            if not (0.0 < self.motion_hint_ratio < 1.0):
+                raise ValueError(
+                    f"motion_hint_ratio must be in (0, 1), got {self.motion_hint_ratio}."
+                )
+            if self.motion_hint_num_frames < 2:
+                raise ValueError(
+                    f"motion_hint_num_frames must be at least 2, got {self.motion_hint_num_frames}."
+                )
+        if self.add_observe_frames and self.use_motion_hint:
+            raise ValueError("add_observe_frames and use_motion_hint cannot both be enabled.")
         self._dataset_path = Path(dataset_path)
         self._dataset_name = self._dataset_path.name
+        self.motion_hint_cache_dir = get_motion_hint_cache_dir(
+            self._dataset_path, self.motion_hint_ratio
+        )
         if isinstance(embodiment_tag, EmbodimentTag):
             self.tag = embodiment_tag.value
         else:
@@ -162,6 +282,11 @@ class LeRobotSingleDataset(Dataset):
 
         self._metadata = self._get_metadata(EmbodimentTag(self.tag))
         self._trajectory_ids, self._trajectory_lengths = self._get_trajectories()
+        if self.use_motion_hint:
+            self._validate_motion_hint_cache()
+            self._valid_motion_hint_trajectory_ids = self._resolve_valid_motion_hint_trajectory_ids()
+        else:
+            self._valid_motion_hint_trajectory_ids = set()
         self._all_steps = self._get_all_steps()
         self._modality_keys = self._get_modality_keys()
         self._delta_indices = self._get_delta_indices()
@@ -410,7 +535,14 @@ class LeRobotSingleDataset(Dataset):
         """
         all_steps: list[tuple[int, int]] = []
         for trajectory_id, trajectory_length in zip(self.trajectory_ids, self.trajectory_lengths):
-            start_index = self.observe_frame_num if self.add_observe_frames else 0
+            if self.add_observe_frames:
+                start_index = self.observe_frame_num
+            elif self.use_motion_hint:
+                if int(trajectory_id) not in self._valid_motion_hint_trajectory_ids:
+                    continue
+                start_index = _compute_motion_hint_frame_count(int(trajectory_length), self.motion_hint_ratio)
+            else:
+                start_index = 0
             for base_index in range(start_index, trajectory_length):
                 all_steps.append((trajectory_id, base_index))
         return all_steps
@@ -485,6 +617,62 @@ class LeRobotSingleDataset(Dataset):
                     raise ValueError(
                         ERROR_MSG_HEADER + f"Unable to find key {key} in modality metadata:\n{e}"
                     )
+
+    def _validate_motion_hint_cache(self):
+        manifest_path = get_motion_hint_manifest_path(self.motion_hint_cache_dir)
+        if not manifest_path.exists():
+            raise FileNotFoundError(
+                f"Motion hint cache manifest not found at {manifest_path}. "
+                "Run scripts/precompute_motion_hints.py before using pipeline 'motion_hint_farneback'."
+            )
+
+        with open(manifest_path, "r") as f:
+            manifest = json.load(f)
+
+        manifest_ratio = manifest.get("motion_hint_ratio")
+        if manifest_ratio != self.motion_hint_ratio:
+            raise ValueError(
+                f"Motion hint cache ratio mismatch: manifest has {manifest_ratio}, "
+                f"dataset expects {self.motion_hint_ratio}."
+            )
+        manifest_num_frames = manifest.get("motion_hint_num_frames")
+        if manifest_num_frames != self.motion_hint_num_frames:
+            raise ValueError(
+                f"Motion hint cache num-frame mismatch: manifest has {manifest_num_frames}, "
+                f"dataset expects {self.motion_hint_num_frames}."
+            )
+        algorithm = manifest.get("algorithm")
+        if algorithm != "farneback_weighted_uv_magnitude_v1":
+            raise ValueError(
+                f"Unsupported motion hint cache algorithm {algorithm!r} in {manifest_path}."
+            )
+
+    def _resolve_valid_motion_hint_trajectory_ids(self) -> set[int]:
+        valid_trajectory_ids: set[int] = set()
+        skipped_short_prefix = 0
+        skipped_missing_cache = 0
+        for trajectory_id, trajectory_length in zip(self.trajectory_ids, self.trajectory_lengths):
+            prefix_length = _compute_motion_hint_frame_count(int(trajectory_length), self.motion_hint_ratio)
+            if prefix_length >= int(trajectory_length) or prefix_length < self.motion_hint_num_frames:
+                skipped_short_prefix += 1
+                continue
+            hint_path = get_motion_hint_image_path(self.motion_hint_cache_dir, int(trajectory_id))
+            if not hint_path.exists():
+                skipped_missing_cache += 1
+                continue
+            valid_trajectory_ids.add(int(trajectory_id))
+        print(
+            "Motion hint trajectory availability: "
+            f"valid={len(valid_trajectory_ids)}, "
+            f"skipped_short_prefix={skipped_short_prefix}, "
+            f"skipped_missing_cache={skipped_missing_cache}"
+        )
+        return valid_trajectory_ids
+
+    def is_motion_hint_trajectory_available(self, trajectory_id: int) -> bool:
+        if not self.use_motion_hint:
+            raise ValueError("Motion hint availability is only defined when use_motion_hint=True.")
+        return trajectory_id in self._valid_motion_hint_trajectory_ids
 
     def set_transforms_metadata(self, metadata: DatasetMetadata):
         """Set the metadata for the transforms. This is useful for transforms that need to know the metadata, such as the normalization values."""
@@ -701,6 +889,19 @@ class LeRobotSingleDataset(Dataset):
                 video_backend_kwargs=self.video_backend_kwargs,
             )  # ndarray format frames, shape: (T, H, W, C)
             frames = np.concatenate([observe_frames, current_frames], axis=0)
+        elif self.use_motion_hint:
+            if len(step_indices) != 1:
+                raise ValueError(
+                    f"Motion-hint pipeline expects a single current frame, got {len(step_indices)} steps."
+                )
+            current_frames = get_frames_by_timestamps(
+                video_path.as_posix(),
+                video_timestamp,
+                video_backend=self.video_backend,
+                video_backend_kwargs=self.video_backend_kwargs,
+            )
+            motion_hint = self.get_motion_hint(trajectory_id)
+            frames = np.concatenate([motion_hint[None, ...], current_frames], axis=0)
         else:
             frames = get_frames_by_timestamps(
                 video_path.as_posix(),
@@ -716,6 +917,51 @@ class LeRobotSingleDataset(Dataset):
             axis=0
         )  # shape: (T, size, size, 3)
         return frames
+
+    def get_motion_hint_start_index(self, trajectory_id: int) -> int:
+        if self.use_motion_hint and trajectory_id not in self._valid_motion_hint_trajectory_ids:
+            raise ValueError(f"Trajectory {trajectory_id} does not have a valid motion hint.")
+        trajectory_index = self.get_trajectory_index(trajectory_id)
+        trajectory_length = int(self.trajectory_lengths[trajectory_index])
+        return _compute_motion_hint_frame_count(trajectory_length, self.motion_hint_ratio)
+
+    def get_motion_hint(self, trajectory_id: int) -> np.ndarray:
+        if not self.use_motion_hint:
+            raise ValueError("Motion hint is only available when use_motion_hint=True.")
+        if trajectory_id not in self._valid_motion_hint_trajectory_ids:
+            raise ValueError(f"Trajectory {trajectory_id} does not have a valid motion hint.")
+        if "video" not in self.modality_keys or len(self.modality_keys["video"]) != 1:
+            raise ValueError(
+                f"Motion hint pipeline expects exactly one video key, got {self.modality_keys.get('video')}."
+            )
+
+        video_key = self.modality_keys["video"][0]
+        if video_key != "video.ego_view":
+            raise ValueError(f"Motion hint pipeline expects video.ego_view, got {video_key}.")
+
+        hint_path = get_motion_hint_image_path(self.motion_hint_cache_dir, trajectory_id)
+        if not hint_path.exists():
+            raise FileNotFoundError(
+                f"Motion hint file not found at {hint_path}. "
+                "Run scripts/precompute_motion_hints.py before training or evaluation."
+            )
+
+        with Image.open(hint_path) as image:
+            if image.mode != "RGB":
+                raise ValueError(
+                    f"Motion hint image at {hint_path} must be RGB, got mode={image.mode}."
+                )
+            motion_hint = np.asarray(image)
+
+        if motion_hint.dtype != np.uint8:
+            raise ValueError(
+                f"Motion hint image at {hint_path} must decode to uint8, got {motion_hint.dtype}."
+            )
+        if motion_hint.ndim != 3 or motion_hint.shape[2] != 3:
+            raise ValueError(
+                f"Motion hint image at {hint_path} must have shape [H, W, 3], got {motion_hint.shape}."
+            )
+        return motion_hint
 
     def get_adjacent_observe_frames(
         self,
@@ -904,6 +1150,8 @@ class CachedLeRobotSingleDataset(LeRobotSingleDataset):
         if img_resize is not None and not isinstance(img_resize, tuple):
             img_resize = tuple(img_resize)
             assert len(img_resize) == 2, f"Expected tuple of length 2, got {img_resize}"
+        if kwargs.get("use_motion_hint", False):
+            raise ValueError("CachedLeRobotSingleDataset does not support use_motion_hint.")
         self.img_resize = img_resize
 
         # Initialize img_resize attribute first to ensure it exists

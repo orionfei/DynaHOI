@@ -20,6 +20,30 @@ import decord  # noqa: F401
 import numpy as np
 
 
+def get_prefix_frame_count(num_frames: int, prefix_ratio: float) -> int:
+    if num_frames <= 0:
+        raise ValueError(f"num_frames must be positive, got {num_frames}.")
+    if not (0.0 < prefix_ratio <= 1.0):
+        raise ValueError(f"prefix_ratio must be in (0, 1], got {prefix_ratio}.")
+    return min(num_frames, int(np.ceil(num_frames * prefix_ratio)))
+
+
+def get_uniform_sample_indices(total_frames: int, num_sampled_frames: int) -> np.ndarray | None:
+    if total_frames <= 0:
+        raise ValueError(f"total_frames must be positive, got {total_frames}.")
+    if num_sampled_frames <= 0:
+        raise ValueError(f"num_sampled_frames must be positive, got {num_sampled_frames}.")
+    if total_frames < num_sampled_frames:
+        return None
+    indices = np.rint(np.linspace(0, total_frames - 1, num_sampled_frames)).astype(np.int64)
+    if np.unique(indices).shape[0] != num_sampled_frames:
+        raise ValueError(
+            f"Uniform sampling produced duplicated indices for total_frames={total_frames}, "
+            f"num_sampled_frames={num_sampled_frames}: {indices.tolist()}."
+        )
+    return indices
+
+
 def get_frames_by_indices(
     video_path: str,
     indices: list[int] | np.ndarray,
@@ -176,6 +200,46 @@ def get_prefix_frames(
         frames = [cv2.resize(frame, resize_size) for frame in frames]
         frames = np.array(frames)
     return frames
+
+
+def get_uniform_prefix_frames(
+    video_path: str,
+    prefix_ratio: float,
+    num_sampled_frames: int,
+    video_backend: str = "decord",
+    video_backend_kwargs: dict = {},
+    resize_size: tuple[int, int] | None = None,
+) -> tuple[np.ndarray | None, int]:
+    if num_sampled_frames <= 0:
+        raise ValueError(f"num_sampled_frames must be positive, got {num_sampled_frames}.")
+    if not (0.0 < prefix_ratio <= 1.0):
+        raise ValueError(f"prefix_ratio must be in (0, 1], got {prefix_ratio}.")
+
+    if video_backend == "decord":
+        vr = decord.VideoReader(video_path, **video_backend_kwargs)
+        total_frames = len(vr)
+        prefix_length = get_prefix_frame_count(total_frames, prefix_ratio)
+        sample_indices = get_uniform_sample_indices(prefix_length, num_sampled_frames)
+        if sample_indices is None:
+            return None, prefix_length
+        frames = vr.get_batch(sample_indices).asnumpy()
+    else:
+        frames = get_all_frames(
+            video_path,
+            video_backend=video_backend,
+            video_backend_kwargs=video_backend_kwargs,
+            resize_size=None,
+        )
+        prefix_length = get_prefix_frame_count(len(frames), prefix_ratio)
+        sample_indices = get_uniform_sample_indices(prefix_length, num_sampled_frames)
+        if sample_indices is None:
+            return None, prefix_length
+        frames = frames[sample_indices]
+
+    if resize_size is not None:
+        frames = [cv2.resize(frame, resize_size) for frame in frames]
+        frames = np.array(frames)
+    return frames, prefix_length
 
 
 def get_all_frames(

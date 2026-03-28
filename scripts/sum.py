@@ -5,7 +5,7 @@ from collections import defaultdict
 
 DEFAULT_FILE_PATH = (
     "/data1/yfl_data/DynaHOI/scripts/evaluation_results/"
-    "results_test:checkpoints-ObAct.jsonl"
+    "gr00t_finetune.jsonl"
 )
 
 

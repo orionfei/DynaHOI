@@ -13,8 +13,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 from dataclasses import dataclass, field
-from typing import Tuple
+from pathlib import Path
+from typing import Any, Tuple
 
 import numpy as np
 import torch
@@ -35,6 +37,86 @@ ACTION_KEY = "action_pred"
 LOSS_KEY = "loss"
 ERROR_MSG = "Error: unexpected input/output"
 N_COLOR_CHANNELS = 3
+ACTION_HEAD_STATE_ENCODER_KEY = "action_head.state_encoder.layer1.W"
+ACTION_HEAD_ACTION_ENCODER_KEY = "action_head.action_encoder.W1.W"
+ACTION_HEAD_ACTION_DECODER_KEY = "action_head.action_decoder.layer2.W"
+
+
+def _iter_checkpoint_safetensor_files(checkpoint_dir: Path, tensor_name: str):
+    seen_files = set()
+    index_path = checkpoint_dir / "model.safetensors.index.json"
+    if index_path.exists():
+        with open(index_path, "r") as f:
+            weight_map = json.load(f).get("weight_map", {})
+        shard_name = weight_map.get(tensor_name)
+        if shard_name is not None:
+            shard_path = checkpoint_dir / shard_name
+            if shard_path.exists():
+                seen_files.add(shard_path)
+                yield shard_path
+
+    single_path = checkpoint_dir / "model.safetensors"
+    if single_path.exists():
+        seen_files.add(single_path)
+        yield single_path
+
+    for shard_path in sorted(checkpoint_dir.glob("*.safetensors")):
+        if shard_path in seen_files:
+            continue
+        seen_files.add(shard_path)
+        yield shard_path
+
+
+def _read_checkpoint_tensor_shape(checkpoint_dir: Path, tensor_name: str) -> tuple[int, ...] | None:
+    try:
+        from safetensors import safe_open
+    except ImportError:
+        print("safetensors is unavailable; skipping checkpoint config reconciliation.")
+        return None
+
+    for shard_path in _iter_checkpoint_safetensor_files(checkpoint_dir, tensor_name):
+        with safe_open(str(shard_path), framework="pt", device="cpu") as f:
+            if tensor_name in f.keys():
+                return tuple(f.get_tensor(tensor_name).shape)
+    return None
+
+
+def _infer_action_head_dims_from_checkpoint(checkpoint_dir: Path) -> dict[str, int]:
+    state_encoder_shape = _read_checkpoint_tensor_shape(
+        checkpoint_dir, ACTION_HEAD_STATE_ENCODER_KEY
+    )
+    action_encoder_shape = _read_checkpoint_tensor_shape(
+        checkpoint_dir, ACTION_HEAD_ACTION_ENCODER_KEY
+    )
+    action_decoder_shape = _read_checkpoint_tensor_shape(
+        checkpoint_dir, ACTION_HEAD_ACTION_DECODER_KEY
+    )
+
+    inferred_dims: dict[str, int] = {}
+    if state_encoder_shape is not None and len(state_encoder_shape) == 3:
+        inferred_dims["max_state_dim"] = state_encoder_shape[1]
+
+    action_dim = None
+    if action_encoder_shape is not None and len(action_encoder_shape) == 3:
+        action_dim = action_encoder_shape[1]
+
+    decoder_action_dim = None
+    if action_decoder_shape is not None and len(action_decoder_shape) == 3:
+        decoder_action_dim = action_decoder_shape[2]
+
+    if action_dim is not None and decoder_action_dim is not None and action_dim != decoder_action_dim:
+        raise ValueError(
+            "Checkpoint action head dimensions are inconsistent: "
+            f"{ACTION_HEAD_ACTION_ENCODER_KEY} implies {action_dim}, "
+            f"but {ACTION_HEAD_ACTION_DECODER_KEY} implies {decoder_action_dim}."
+        )
+
+    resolved_action_dim = action_dim if action_dim is not None else decoder_action_dim
+    if resolved_action_dim is not None:
+        inferred_dims["action_dim"] = resolved_action_dim
+        inferred_dims["max_action_dim"] = resolved_action_dim
+
+    return inferred_dims
 
 
 # config
@@ -198,6 +280,41 @@ class GR00T_N1_5(PreTrainedModel):
         return backbone_inputs, action_inputs
 
     @classmethod
+    def _reconcile_pretrained_config(
+        cls, checkpoint_path: str | Path, config: GR00T_N1_5_Config | None = None
+    ) -> GR00T_N1_5_Config:
+        checkpoint_dir = Path(checkpoint_path)
+        if config is None:
+            config = cls.config_class.from_pretrained(str(checkpoint_dir))
+
+        action_head_cfg = dict(getattr(config, "action_head_cfg", {}) or {})
+        inferred_dims = _infer_action_head_dims_from_checkpoint(checkpoint_dir)
+        if not inferred_dims or not action_head_cfg:
+            return config
+
+        updates: dict[str, tuple[Any, Any]] = {}
+        if "action_dim" in inferred_dims and getattr(config, "action_dim", None) != inferred_dims["action_dim"]:
+            updates["action_dim"] = (getattr(config, "action_dim", None), inferred_dims["action_dim"])
+            config.action_dim = inferred_dims["action_dim"]
+
+        for key in ("action_dim", "max_action_dim", "max_state_dim"):
+            if key in inferred_dims and action_head_cfg.get(key) != inferred_dims[key]:
+                updates[f"action_head_cfg.{key}"] = (action_head_cfg.get(key), inferred_dims[key])
+                action_head_cfg[key] = inferred_dims[key]
+
+        if updates:
+            config.action_head_cfg = action_head_cfg
+            update_summary = ", ".join(
+                f"{key}: {old} -> {new}" for key, (old, new) in updates.items()
+            )
+            print(
+                "Reconciled stale checkpoint config from saved tensor shapes at "
+                f"{checkpoint_dir}: {update_summary}"
+            )
+
+        return config
+
+    @classmethod
     def from_pretrained(cls, pretrained_model_name_or_path: str, **kwargs):
         tune_visual = kwargs.pop("tune_visual", True)
         tune_llm = kwargs.pop("tune_llm", False)
@@ -222,8 +339,14 @@ class GR00T_N1_5(PreTrainedModel):
             )
             local_model_path = pretrained_model_name_or_path
 
+        config = kwargs.pop("config", None)
+        config = cls._reconcile_pretrained_config(local_model_path, config)
+
         pretrained_model = super().from_pretrained(
-            local_model_path, local_model_path=local_model_path, **kwargs
+            local_model_path,
+            local_model_path=local_model_path,
+            config=config,
+            **kwargs,
         )  
 
         pretrained_model.backbone.set_trainable_parameters(
