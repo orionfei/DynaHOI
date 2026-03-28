@@ -21,7 +21,6 @@ from gr00t.experiment.runner import TrainRunner
 from gr00t.model.gr00t_n1 import GR00T_N1_5
 from gr00t.utils.peft import get_lora_model
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "4,5,6,7"
 os.environ["WANDB_PROJECT"] = "GR00T-N1.5-unity"
 
 @dataclass
@@ -46,6 +45,18 @@ class TrainArgsConfig:
 
     num_gpus: int = 4
     """Number of GPUs to use for training."""
+
+    nnodes: int = 1
+    """Number of nodes to use when the script launches torchrun itself."""
+
+    node_rank: int = 0
+    """Rank of the current node when nnodes > 1 and the script launches torchrun itself."""
+
+    master_addr: str = "127.0.0.1"
+    """Master node address used by the internal torchrun launcher."""
+
+    master_port: int = 29500
+    """Master node port used by the internal torchrun launcher."""
 
     save_steps: int = 4000
     """Number of steps between saving checkpoints."""
@@ -223,40 +234,61 @@ def _print_config(config: TrainArgsConfig):
 def launch_train(config: TrainArgsConfig):
     _print_config(config)
 
-    available_gpus = torch.cuda.device_count() if torch.cuda.is_available() else 1
-    if config.num_gpus > available_gpus:
-        raise ValueError(
-            f"Number of GPUs requested ({config.num_gpus}) is greater than the available GPUs ({available_gpus})."
-        )
     if config.num_gpus <= 0:
         raise ValueError("Number of GPUs must be greater than 0.")
-    print(f"Using {config.num_gpus} GPUs")
+    if config.nnodes <= 0:
+        raise ValueError("nnodes must be greater than 0.")
+    if config.node_rank < 0:
+        raise ValueError("node_rank must be greater than or equal to 0.")
+    if config.node_rank >= config.nnodes:
+        raise ValueError(
+            f"node_rank ({config.node_rank}) must be smaller than nnodes ({config.nnodes})."
+        )
+    if config.master_port <= 0:
+        raise ValueError("master_port must be greater than 0.")
 
-    if config.num_gpus == 1:
-        train_main(config)
-        return
-
-    if (
+    is_external_distributed = (
         os.environ.get("RANK") is not None
         or os.environ.get("LOCAL_RANK") is not None
         or os.environ.get("WORLD_SIZE") is not None
         or os.environ.get("IS_TORCHRUN", "0") == "1"
-    ):
-        print("Using torchrun")
+    )
+
+    available_gpus = torch.cuda.device_count() if torch.cuda.is_available() else 0
+    if not is_external_distributed and config.num_gpus > available_gpus:
+        raise ValueError(
+            f"Number of GPUs requested ({config.num_gpus}) is greater than the available GPUs ({available_gpus})."
+        )
+    print(f"Using {config.num_gpus} GPUs")
+
+    if config.num_gpus == 1:
+        if config.nnodes != 1:
+            raise ValueError("Single-GPU mode only supports nnodes=1.")
+        train_main(config)
+        return
+
+    if is_external_distributed:
+        print("Using externally managed distributed launch")
         train_main(config)
         return
 
     script_path = Path(__file__).absolute()
-    if "CUDA_VISIBLE_DEVICES" in os.environ:
-        del os.environ["CUDA_VISIBLE_DEVICES"]
-
     cmd = [
         "torchrun",
-        "--standalone",
         f"--nproc_per_node={config.num_gpus}",
-        "--nnodes=1",
-        str(script_path),
+        f"--nnodes={config.nnodes}",
     ]
+    if config.nnodes == 1:
+        cmd.append("--standalone")
+    else:
+        cmd.extend(
+            [
+                f"--node_rank={config.node_rank}",
+                f"--master_addr={config.master_addr}",
+                f"--master_port={config.master_port}",
+            ]
+        )
+    cmd.append(str(script_path))
     for key, value in vars(config).items():
         if isinstance(value, bool):
             cmd.append(f"--{'' if value else 'no-'}{key.replace('_', '-')}")
