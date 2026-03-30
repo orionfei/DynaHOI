@@ -1,7 +1,7 @@
 import copy
+import json
 import os
 
-# os.environ["CUDA_VISIBLE_DEVICES"] = "3"
 os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
 os.environ["CUDA_VISIBLE_DEVICES"] = "4"
 
@@ -28,6 +28,39 @@ from gr00t.utils.unity_server import UnityServer
 warnings.simplefilter("ignore", category=FutureWarning)
 
 SEED = 2025
+DEFAULT_EPISODE_SELECTION_PATH = (
+    "/data1/yfl_data/Dyana_data/test/"
+    "eval_episode_selection_100_per_task.json"
+)
+
+
+def load_default_eval_trajs() -> List[int]:
+    with open(DEFAULT_EPISODE_SELECTION_PATH, "r", encoding="utf-8") as f:
+        payload = json.load(f)
+
+    task_types = payload.get("task_types")
+    if not isinstance(task_types, dict):
+        raise ValueError(
+            f"Invalid selection file {DEFAULT_EPISODE_SELECTION_PATH}: missing 'task_types' object."
+        )
+
+    ordered_task_names = ["circular", "linear", "harmonic"]
+    trajs: List[int] = []
+    for task_name in ordered_task_names:
+        raw_episodes = task_types.get(task_name)
+        if not isinstance(raw_episodes, list):
+            raise ValueError(
+                f"Invalid selection file {DEFAULT_EPISODE_SELECTION_PATH}: missing list for task_type {task_name!r}."
+            )
+        for episode_name in raw_episodes:
+            if not isinstance(episode_name, str) or not episode_name.startswith("episode_"):
+                raise ValueError(
+                    f"Invalid episode entry {episode_name!r} for task_type {task_name!r}."
+                )
+            trajs.append(int(episode_name.split("_", 1)[1]))
+    return trajs
+
+
 random.seed(SEED)
 np.random.seed(SEED)
 torch.manual_seed(SEED)
@@ -42,7 +75,7 @@ print(f"Using seed: {SEED}")
 
 @dataclass
 class EvalArgsConfig:
-    pipeline: str = "motion_hint_farneback"
+    pipeline: str = "baseline_adjacent_window"
     """Registered eval pipeline name."""
 
     host: str = "localhost"
@@ -54,19 +87,19 @@ class EvalArgsConfig:
     modality_keys: List[str] = field(default_factory=lambda: ["left_hand"])
     """Modality keys to evaluate."""
 
-    data_config: Literal[tuple(DATA_CONFIG_MAP.keys())] = "mano_18dim_motion_hint"
+    data_config: Literal[tuple(DATA_CONFIG_MAP.keys())] = "mano_18dim_baseline"
     """Data config to use."""
 
     steps: int = 150
     """Unused rollout length override; per-trajectory dataset length is used for evaluation."""
 
-    trajs: List[int] = field(default_factory=lambda: list(range(10)))
-    """Trajectory ids to evaluate."""
+    trajs: List[int] = field(default_factory=load_default_eval_trajs)
+    """Trajectory ids to evaluate. Defaults to the selected 300 episodes."""
 
     repeat_num: int = 1
     """Number of times to repeat the evaluation for each episode."""
 
-    action_horizon: int = 10
+    action_horizon: int = 5
     """Action horizon to evaluate."""
 
     action_dim: int = 18
@@ -81,10 +114,10 @@ class EvalArgsConfig:
     embodiment_tag: Literal[tuple(EMBODIMENT_TAG_MAPPING.keys())] = "new_embodiment"
     """Embodiment tag to use."""
 
-    model_path: str | None = "/data1/yfl_data/DynaHOI/gr00t/checkpoints/motion_hint_farneback/temp/checkpoint-10"
+    model_path: str | None = "/data1/yfl_data/DynaHOI/gr00t/checkpoints/adjacent_window/adjacent_window_5/checkpoint-4000"
     """Path to the model checkpoint."""
 
-    window_length: int = 0
+    window_length: int = 5
     """Adjacent history frame count for pipelines that support it."""
 
     motion_hint_ratio: float = 0.25
