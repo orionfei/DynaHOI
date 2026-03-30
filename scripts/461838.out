@@ -1,9 +1,9 @@
-Sender: LSF System <lsfadmin@gpu03>
-Subject: Job 461836: <gr00t_motion_hint_finetune_nf6> in cluster <cluster1> Done
+Sender: LSF System <lsfadmin@gpu02>
+Subject: Job 461838: <gr00t_motion_hint_finetune_nf6> in cluster <cluster1> Exited
 
 Job <gr00t_motion_hint_finetune_nf6> was submitted from host <mgt02> by user <liuyifei> in cluster <cluster1>.
-Job was executed on host(s) <2*gpu03>, in queue <gpuq>, as user <liuyifei> in cluster <cluster1>.
-                            <2*gpu05>
+Job was executed on host(s) <2*gpu02>, in queue <gpuq>, as user <liuyifei> in cluster <cluster1>.
+                            <2*gpu06>
 </gpfsdata/home/liuyifei> was used as the home directory.
 </gpfsdata/home/liuyifei/DynaHOI> was used as the working directory.
 Started at Results reported on 
@@ -59,54 +59,54 @@ TRAIN_ARGS=(
   --data-config mano_18dim_motion_hint
   --dataset-path /gpfsdata/home/liuyifei/Dyana_data/train
   --output-dir /gpfsdata/home/liuyifei/DynaHOI/gr00t/checkpoints/motion_hint_farneback
-  --num-gpus "${GPUS_PER_NODE}"
   --batch-size 8
+  --max-steps 10
 
 (... more ...)
 ------------------------------------------------------------
 
-Successfully completed.
+Exited with exit code 1.
 
 Resource usage summary:
 
-    CPU time :                                   1.22 sec.
-    Max Memory :                                 20 MB
-    Average Memory :                             3.00 MB
+    CPU time :                                   71.82 sec.
+    Max Memory :                                 866 MB
+    Average Memory :                             789.96 MB
     Total Requested Memory :                     -
     Delta Memory :                               -
     Max Swap :                                   -
     Max Processes :                              7
-    Max Threads :                                9
-    Run time :                                   4 sec.
-    Turnaround time :                            5 sec.
+    Max Threads :                                151
+    Run time :                                   1063 sec.
+    Turnaround time :                            1063 sec.
 
 The output (if any) follows:
 
 /gpfsdata/home/liuyifei/DynaHOI
-gpu03
+gpu02
 /gpfsdata/home/liuyifei/miniconda3/envs/gr00t/bin/python
 Python 3.10.18
 /gpfsdata/home/liuyifei/miniconda3/envs/gr00t/bin/torchrun
-LSB_DJOB_HOSTFILE=/gpfsdata/home/liuyifei/.lsbatch/1774844899.461836.hostfile
-gpu03
-gpu03
-gpu05
-gpu05
+LSB_DJOB_HOSTFILE=/gpfsdata/home/liuyifei/.lsbatch/1774845714.461838.hostfile
+gpu02
+gpu02
+gpu06
+gpu06
 GPUS_PER_NODE=2
 MASTER_PORT=29500
 /gpfsdata/home/liuyifei/DynaHOI
-gpu03
+gpu02
 PYTHON_BIN=/gpfsdata/home/liuyifei/miniconda3/envs/gr00t/bin/python
 GPUS_PER_NODE=2
 MASTER_PORT=29500
 /gpfsdata/home/liuyifei/miniconda3/envs/gr00t/bin/python
 Python 3.10.18
 /gpfsdata/apps/lsf/10.1/linux2.6-glibc2.3-x86_64/bin/blaunch
-Resolved hosts: gpu03 gpu05
-Multi-node launch: nnodes=2, master_addr=gpu03
-Launching host=gpu03 node_rank=0
-Launching host=gpu05 node_rank=1
-Mon Mar 30 12:28:23 2026       
+Resolved hosts: gpu02 gpu06
+Multi-node launch: nnodes=2, master_addr=gpu02
+Launching remote host=gpu06 node_rank=1
+Launching local host=gpu02 node_rank=0
+Mon Mar 30 12:41:58 2026       
 +---------------------------------------------------------------------------------------+
 | NVIDIA-SMI 535.183.06             Driver Version: 535.183.06   CUDA Version: 12.2     |
 |-----------------------------------------+----------------------+----------------------+
@@ -114,12 +114,12 @@ Mon Mar 30 12:28:23 2026
 | Fan  Temp   Perf          Pwr:Usage/Cap |         Memory-Usage | GPU-Util  Compute M. |
 |                                         |                      |               MIG M. |
 |=========================================+======================+======================|
-|   0  Tesla V100-PCIE-32GB           Off | 00000000:2F:00.0 Off |                    0 |
-| N/A   33C    P0              27W / 250W |      4MiB / 32768MiB |      0%      Default |
+|   0  Tesla V100-PCIE-32GB           On  | 00000000:2F:00.0 Off |                    0 |
+| N/A   30C    P0              28W / 250W |      4MiB / 32768MiB |      0%      Default |
 |                                         |                      |                  N/A |
 +-----------------------------------------+----------------------+----------------------+
-|   1  Tesla V100-PCIE-32GB           Off | 00000000:D8:00.0 Off |                    0 |
-| N/A   33C    P0              26W / 250W |      4MiB / 32768MiB |      0%      Default |
+|   1  Tesla V100-PCIE-32GB           On  | 00000000:D8:00.0 Off |                    0 |
+| N/A   28C    P0              26W / 250W |      4MiB / 32768MiB |      0%      Default |
 |                                         |                      |                  N/A |
 +-----------------------------------------+----------------------+----------------------+
                                                                                          
@@ -130,33 +130,53 @@ Mon Mar 30 12:28:23 2026
 |=======================================================================================|
 |  No running processes found                                                           |
 +---------------------------------------------------------------------------------------+
-Mon Mar 30 12:28:23 2026       
-+---------------------------------------------------------------------------------------+
-| NVIDIA-SMI 535.183.06             Driver Version: 535.183.06   CUDA Version: 12.2     |
-|-----------------------------------------+----------------------+----------------------+
-| GPU  Name                 Persistence-M | Bus-Id        Disp.A | Volatile Uncorr. ECC |
-| Fan  Temp   Perf          Pwr:Usage/Cap |         Memory-Usage | GPU-Util  Compute M. |
-|                                         |                      |               MIG M. |
-|=========================================+======================+======================|
-|   0  Tesla V100-PCIE-32GB           Off | 00000000:2F:00.0 Off |                    0 |
-| N/A   32C    P0              27W / 250W |      4MiB / 32768MiB |      0%      Default |
-|                                         |                      |                  N/A |
-+-----------------------------------------+----------------------+----------------------+
-|   1  Tesla V100-PCIE-32GB           Off | 00000000:D8:00.0 Off |                    0 |
-| N/A   31C    P0              24W / 250W |      4MiB / 32768MiB |      0%      Default |
-|                                         |                      |                  N/A |
-+-----------------------------------------+----------------------+----------------------+
-                                                                                         
-+---------------------------------------------------------------------------------------+
-| Processes:                                                                            |
-|  GPU   GI   CI        PID   Type   Process name                            GPU Memory |
-|        ID   ID                                                             Usage      |
-|=======================================================================================|
-|  No running processes found                                                           |
-+---------------------------------------------------------------------------------------+
+
+==================================================
+GR00T FINE-TUNING CONFIGURATION:
+==================================================
+pipeline: motion_hint_farneback
+dataset_path: ['/gpfsdata/home/liuyifei/Dyana_data/train']
+output_dir: /gpfsdata/home/liuyifei/DynaHOI/gr00t/checkpoints/motion_hint_farneback
+data_config: mano_18dim_motion_hint
+batch_size: 8
+max_steps: 10
+num_gpus: 2
+nnodes: 2
+node_rank: 0
+master_addr: gpu02
+master_port: 29500
+save_steps: 4000
+action_horizon: 10
+action_dim: 18
+base_model_path: nvidia/GR00T-N1.5-3B
+tune_llm: False
+tune_visual: False
+tune_projector: True
+tune_diffusion_model: False
+resume: False
+learning_rate: 0.00015
+weight_decay: 1e-05
+warmup_ratio: 0.05
+lora_rank: 0
+lora_alpha: 32
+lora_dropout: 0.1
+lora_full_model: False
+dataloader_num_workers: 4
+report_to: none
+embodiment_tag: new_embodiment
+video_backend: decord
+window_length: 0
+motion_hint_ratio: 0.25
+motion_hint_num_frames: 6
+balance_dataset_weights: True
+balance_trajectory_weights: True
+==================================================
+
+Using 2 GPUs
+Running torchrun command: ['torchrun', '--nproc_per_node=2', '--nnodes=2', '--node_rank=0', '--master_addr=gpu02', '--master_port=29500', '/gpfsdata/home/liuyifei/DynaHOI/scripts/finetune_policy.py', '--pipeline', 'motion_hint_farneback', '--dataset-path', '/gpfsdata/home/liuyifei/Dyana_data/train', '--output-dir', '/gpfsdata/home/liuyifei/DynaHOI/gr00t/checkpoints/motion_hint_farneback', '--data-config', 'mano_18dim_motion_hint', '--batch-size', '8', '--max-steps', '10', '--num-gpus', '2', '--nnodes', '2', '--node-rank', '0', '--master-addr', 'gpu02', '--master-port', '29500', '--save-steps', '4000', '--action-horizon', '10', '--action-dim', '18', '--base-model-path', 'nvidia/GR00T-N1.5-3B', '--no-tune-llm', '--no-tune-visual', '--tune-projector', '--no-tune-diffusion-model', '--no-resume', '--learning-rate', '0.00015', '--weight-decay', '1e-05', '--warmup-ratio', '0.05', '--lora-rank', '0', '--lora-alpha', '32', '--lora-dropout', '0.1', '--no-lora-full-model', '--dataloader-num-workers', '4', '--report-to', 'none', '--embodiment-tag', 'new_embodiment', '--video-backend', 'decord', '--window-length', '0', '--motion-hint-ratio', '0.25', '--motion-hint-num-frames', '6', '--balance-dataset-weights', '--balance-trajectory-weights']
 
 
 PS:
 
-Read file <461836.err> for stderr output of this job.
+Read file <461838.err> for stderr output of this job.
 

@@ -5,6 +5,7 @@ set -x
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 PYTHON_BIN="${PYTHON_BIN:-python}"
+PYTHON_BIN_DIR="$(dirname "${PYTHON_BIN}")"
 GPUS_PER_NODE="${GPUS_PER_NODE:-2}"
 MASTER_PORT="${MASTER_PORT:-29500}"
 
@@ -14,10 +15,12 @@ export PYTHONPATH="${REPO_DIR}:${PYTHONPATH:-}"
 pwd
 hostname
 echo "PYTHON_BIN=${PYTHON_BIN}"
+echo "PYTHON_BIN_DIR=${PYTHON_BIN_DIR}"
 echo "GPUS_PER_NODE=${GPUS_PER_NODE}"
 echo "MASTER_PORT=${MASTER_PORT}"
 which "${PYTHON_BIN}" || true
 "${PYTHON_BIN}" -V || true
+command -v torchrun || true
 which blaunch || true
 
 if [[ -n "${LSB_DJOB_HOSTFILE:-}" && -f "${LSB_DJOB_HOSTFILE}" ]]; then
@@ -47,9 +50,11 @@ if [[ -n "${LSB_DJOB_HOSTFILE:-}" && -f "${LSB_DJOB_HOSTFILE}" ]]; then
                 cd ${REPO_DIR}
                 export PYTHONPATH=${REPO_DIR}:\${PYTHONPATH:-}
                 export LD_LIBRARY_PATH=\${LD_LIBRARY_PATH:-}
+                export PATH=${PYTHON_BIN_DIR}:\${PATH:-}
                 hostname
                 which ${PYTHON_BIN}
                 ${PYTHON_BIN} -V
+                which torchrun
                 ${PYTHON_BIN} ${SCRIPT_DIR}/finetune_policy.py \
                     --nnodes ${#HOSTS[@]} \
                     --node-rank ${NODE_RANK} \
