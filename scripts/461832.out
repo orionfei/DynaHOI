@@ -1,0 +1,129 @@
+Sender: LSF System <lsfadmin@gpu05>
+Subject: Job 461832: <gr00t_motion_hint_finetune_nf6> in cluster <cluster1> Done
+
+Job <gr00t_motion_hint_finetune_nf6> was submitted from host <mgt02> by user <liuyifei> in cluster <cluster1>.
+Job was executed on host(s) <2*gpu05>, in queue <gpuq>, as user <liuyifei> in cluster <cluster1>.
+                            <2*gpu06>
+</gpfsdata/home/liuyifei> was used as the home directory.
+</gpfsdata/home/liuyifei/DynaHOI> was used as the working directory.
+Started at Results reported on 
+Your job looked like:
+
+------------------------------------------------------------
+# LSBATCH: User input
+#!/bin/bash
+#BSUB -n 4
+#BSUB -R "select[ngpus>0] rusage[ngpus_shared=4] span[ptile=2]"
+#BSUB -q gpuq
+#BSUB -J gr00t_motion_hint_finetune_nf6
+#BSUB -o %J.out
+#BSUB -e %J.err
+
+set -euo pipefail
+
+REPO_DIR="/gpfsdata/home/liuyifei/DynaHOI"
+SCRIPT_DIR="${REPO_DIR}/scripts"
+
+cd "${REPO_DIR}"
+
+module load gcc/12.1
+
+export PYTHON_BIN="$(command -v python)"
+export GPUS_PER_NODE="${GPUS_PER_NODE:-2}"
+export EXPECTED_NNODES="${EXPECTED_NNODES:-2}"
+export MASTER_PORT="${MASTER_PORT:-29500}"
+
+TRAIN_ARGS=(
+  --pipeline motion_hint_farneback
+  --data-config mano_18dim_motion_hint
+  --dataset-path /gpfsdata/home/liuyifei/Dyana_data/train
+  --output-dir /gpfsdata/home/liuyifei/DynaHOI/gr00t/checkpoints/motion_hint_farneback
+  --num-gpus "${GPUS_PER_NODE}"
+  --batch-size 8
+  --max-steps 10
+  --save-steps 4000
+  --action-horizon 10
+  --action-dim 18
+  --motion-hint-ratio 0.25
+  --motion-hint-num-frames 6
+  --learning-rate 1.5e-4
+  --warmup-ratio 0.05
+  --dataloader-num-workers 4
+  --report-to wandb
+)
+
+bash "${SCRIPT_DIR}/gr00t_finetune.sh" "${TRAIN_ARGS[@]}"
+
+------------------------------------------------------------
+
+Successfully completed.
+
+Resource usage summary:
+
+    CPU time :                                   0.68 sec.
+    Max Memory :                                 4 MB
+    Average Memory :                             3.00 MB
+    Total Requested Memory :                     -
+    Delta Memory :                               -
+    Max Swap :                                   -
+    Max Processes :                              2
+    Max Threads :                                2
+    Run time :                                   3 sec.
+    Turnaround time :                            4 sec.
+
+The output (if any) follows:
+
+Mon Mar 30 11:29:18 2026       
++---------------------------------------------------------------------------------------+
+| NVIDIA-SMI 535.183.06             Driver Version: 535.183.06   CUDA Version: 12.2     |
+|-----------------------------------------+----------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id        Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |         Memory-Usage | GPU-Util  Compute M. |
+|                                         |                      |               MIG M. |
+|=========================================+======================+======================|
+|   0  Tesla V100-PCIE-32GB           Off | 00000000:2F:00.0 Off |                    0 |
+| N/A   29C    P0              27W / 250W |      4MiB / 32768MiB |      0%      Default |
+|                                         |                      |                  N/A |
++-----------------------------------------+----------------------+----------------------+
+|   1  Tesla V100-PCIE-32GB           Off | 00000000:D8:00.0 Off |                    0 |
+| N/A   29C    P0              25W / 250W |      4MiB / 32768MiB |      0%      Default |
+|                                         |                      |                  N/A |
++-----------------------------------------+----------------------+----------------------+
+                                                                                         
++---------------------------------------------------------------------------------------+
+| Processes:                                                                            |
+|  GPU   GI   CI        PID   Type   Process name                            GPU Memory |
+|        ID   ID                                                             Usage      |
+|=======================================================================================|
+|  No running processes found                                                           |
++---------------------------------------------------------------------------------------+
+Mon Mar 30 11:29:18 2026       
++---------------------------------------------------------------------------------------+
+| NVIDIA-SMI 535.183.06             Driver Version: 535.183.06   CUDA Version: 12.2     |
+|-----------------------------------------+----------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id        Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |         Memory-Usage | GPU-Util  Compute M. |
+|                                         |                      |               MIG M. |
+|=========================================+======================+======================|
+|   0  Tesla V100-PCIE-32GB           On  | 00000000:2F:00.0 Off |                    0 |
+| N/A   30C    P0              28W / 250W |      4MiB / 32768MiB |      0%      Default |
+|                                         |                      |                  N/A |
++-----------------------------------------+----------------------+----------------------+
+|   1  Tesla V100-PCIE-32GB           On  | 00000000:D8:00.0 Off |                    0 |
+| N/A   28C    P0              26W / 250W |      4MiB / 32768MiB |      0%      Default |
+|                                         |                      |                  N/A |
++-----------------------------------------+----------------------+----------------------+
+                                                                                         
++---------------------------------------------------------------------------------------+
+| Processes:                                                                            |
+|  GPU   GI   CI        PID   Type   Process name                            GPU Memory |
+|        ID   ID                                                             Usage      |
+|=======================================================================================|
+|  No running processes found                                                           |
++---------------------------------------------------------------------------------------+
+
+
+PS:
+
+Read file <461832.err> for stderr output of this job.
+

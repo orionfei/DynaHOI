@@ -7,6 +7,7 @@
 #BSUB -e %J.err
 
 set -euo pipefail
+set -x
 
 REPO_DIR="/gpfsdata/home/liuyifei/DynaHOI"
 SCRIPT_DIR="${REPO_DIR}/scripts"
@@ -14,18 +15,37 @@ SCRIPT_DIR="${REPO_DIR}/scripts"
 cd "${REPO_DIR}"
 
 module load gcc/12.1
+
+if ! command -v conda >/dev/null 2>&1; then
+    echo "conda command not found" >&2
+    exit 1
+fi
+
+eval "$(conda shell.bash hook)"
 conda activate gr00t
 
 export PYTHON_BIN="$(command -v python)"
 export GPUS_PER_NODE="${GPUS_PER_NODE:-2}"
-export EXPECTED_NNODES="${EXPECTED_NNODES:-2}"
 export MASTER_PORT="${MASTER_PORT:-29500}"
+export WANDB_PROJECT="${WANDB_PROJECT:-GR00T-N1.5-unity}"
+
+pwd
+hostname
+which python
+python -V
+which torchrun
+echo "LSB_DJOB_HOSTFILE=${LSB_DJOB_HOSTFILE:-}"
+if [[ -n "${LSB_DJOB_HOSTFILE:-}" && -f "${LSB_DJOB_HOSTFILE}" ]]; then
+    cat "${LSB_DJOB_HOSTFILE}"
+fi
+echo "GPUS_PER_NODE=${GPUS_PER_NODE}"
+echo "MASTER_PORT=${MASTER_PORT}"
 
 TRAIN_ARGS=(
   --pipeline motion_hint_farneback
   --data-config mano_18dim_motion_hint
-  --dataset-path /data1/yfl_data/Dyana_data/train
-  --output-dir /data1/yfl_data/DynaHOI/gr00t/checkpoints/motion_hint_farneback/
+  --dataset-path /gpfsdata/home/liuyifei/Dyana_data/train
+  --output-dir /gpfsdata/home/liuyifei/DynaHOI/gr00t/checkpoints/motion_hint_farneback
   --num-gpus "${GPUS_PER_NODE}"
   --batch-size 8
   --max-steps 4000
