@@ -1,9 +1,9 @@
-Sender: LSF System <lsfadmin@gpu05>
-Subject: Job 461832: <gr00t_motion_hint_finetune_nf6> in cluster <cluster1> Done
+Sender: LSF System <lsfadmin@gpu03>
+Subject: Job 461836: <gr00t_motion_hint_finetune_nf6> in cluster <cluster1> Done
 
 Job <gr00t_motion_hint_finetune_nf6> was submitted from host <mgt02> by user <liuyifei> in cluster <cluster1>.
-Job was executed on host(s) <2*gpu05>, in queue <gpuq>, as user <liuyifei> in cluster <cluster1>.
-                            <2*gpu06>
+Job was executed on host(s) <2*gpu03>, in queue <gpuq>, as user <liuyifei> in cluster <cluster1>.
+                            <2*gpu05>
 </gpfsdata/home/liuyifei> was used as the home directory.
 </gpfsdata/home/liuyifei/DynaHOI> was used as the working directory.
 Started at Results reported on 
@@ -20,6 +20,7 @@ Your job looked like:
 #BSUB -e %J.err
 
 set -euo pipefail
+set -x
 
 REPO_DIR="/gpfsdata/home/liuyifei/DynaHOI"
 SCRIPT_DIR="${REPO_DIR}/scripts"
@@ -28,10 +29,30 @@ cd "${REPO_DIR}"
 
 module load gcc/12.1
 
+if ! command -v conda >/dev/null 2>&1; then
+    echo "conda command not found" >&2
+    exit 1
+fi
+
+eval "$(conda shell.bash hook)"
+conda activate gr00t
+
 export PYTHON_BIN="$(command -v python)"
 export GPUS_PER_NODE="${GPUS_PER_NODE:-2}"
-export EXPECTED_NNODES="${EXPECTED_NNODES:-2}"
 export MASTER_PORT="${MASTER_PORT:-29500}"
+export WANDB_PROJECT="${WANDB_PROJECT:-GR00T-N1.5-unity}"
+
+pwd
+hostname
+which python
+python -V
+which torchrun
+echo "LSB_DJOB_HOSTFILE=${LSB_DJOB_HOSTFILE:-}"
+if [[ -n "${LSB_DJOB_HOSTFILE:-}" && -f "${LSB_DJOB_HOSTFILE}" ]]; then
+    cat "${LSB_DJOB_HOSTFILE}"
+fi
+echo "GPUS_PER_NODE=${GPUS_PER_NODE}"
+echo "MASTER_PORT=${MASTER_PORT}"
 
 TRAIN_ARGS=(
   --pipeline motion_hint_farneback
@@ -40,40 +61,52 @@ TRAIN_ARGS=(
   --output-dir /gpfsdata/home/liuyifei/DynaHOI/gr00t/checkpoints/motion_hint_farneback
   --num-gpus "${GPUS_PER_NODE}"
   --batch-size 8
-  --max-steps 10
-  --save-steps 4000
-  --action-horizon 10
-  --action-dim 18
-  --motion-hint-ratio 0.25
-  --motion-hint-num-frames 6
-  --learning-rate 1.5e-4
-  --warmup-ratio 0.05
-  --dataloader-num-workers 4
-  --report-to wandb
-)
 
-bash "${SCRIPT_DIR}/gr00t_finetune.sh" "${TRAIN_ARGS[@]}"
-
+(... more ...)
 ------------------------------------------------------------
 
 Successfully completed.
 
 Resource usage summary:
 
-    CPU time :                                   0.68 sec.
-    Max Memory :                                 4 MB
+    CPU time :                                   1.22 sec.
+    Max Memory :                                 20 MB
     Average Memory :                             3.00 MB
     Total Requested Memory :                     -
     Delta Memory :                               -
     Max Swap :                                   -
-    Max Processes :                              2
-    Max Threads :                                2
-    Run time :                                   3 sec.
-    Turnaround time :                            4 sec.
+    Max Processes :                              7
+    Max Threads :                                9
+    Run time :                                   4 sec.
+    Turnaround time :                            5 sec.
 
 The output (if any) follows:
 
-Mon Mar 30 11:29:18 2026       
+/gpfsdata/home/liuyifei/DynaHOI
+gpu03
+/gpfsdata/home/liuyifei/miniconda3/envs/gr00t/bin/python
+Python 3.10.18
+/gpfsdata/home/liuyifei/miniconda3/envs/gr00t/bin/torchrun
+LSB_DJOB_HOSTFILE=/gpfsdata/home/liuyifei/.lsbatch/1774844899.461836.hostfile
+gpu03
+gpu03
+gpu05
+gpu05
+GPUS_PER_NODE=2
+MASTER_PORT=29500
+/gpfsdata/home/liuyifei/DynaHOI
+gpu03
+PYTHON_BIN=/gpfsdata/home/liuyifei/miniconda3/envs/gr00t/bin/python
+GPUS_PER_NODE=2
+MASTER_PORT=29500
+/gpfsdata/home/liuyifei/miniconda3/envs/gr00t/bin/python
+Python 3.10.18
+/gpfsdata/apps/lsf/10.1/linux2.6-glibc2.3-x86_64/bin/blaunch
+Resolved hosts: gpu03 gpu05
+Multi-node launch: nnodes=2, master_addr=gpu03
+Launching host=gpu03 node_rank=0
+Launching host=gpu05 node_rank=1
+Mon Mar 30 12:28:23 2026       
 +---------------------------------------------------------------------------------------+
 | NVIDIA-SMI 535.183.06             Driver Version: 535.183.06   CUDA Version: 12.2     |
 |-----------------------------------------+----------------------+----------------------+
@@ -82,11 +115,11 @@ Mon Mar 30 11:29:18 2026
 |                                         |                      |               MIG M. |
 |=========================================+======================+======================|
 |   0  Tesla V100-PCIE-32GB           Off | 00000000:2F:00.0 Off |                    0 |
-| N/A   29C    P0              27W / 250W |      4MiB / 32768MiB |      0%      Default |
+| N/A   33C    P0              27W / 250W |      4MiB / 32768MiB |      0%      Default |
 |                                         |                      |                  N/A |
 +-----------------------------------------+----------------------+----------------------+
 |   1  Tesla V100-PCIE-32GB           Off | 00000000:D8:00.0 Off |                    0 |
-| N/A   29C    P0              25W / 250W |      4MiB / 32768MiB |      0%      Default |
+| N/A   33C    P0              26W / 250W |      4MiB / 32768MiB |      0%      Default |
 |                                         |                      |                  N/A |
 +-----------------------------------------+----------------------+----------------------+
                                                                                          
@@ -97,7 +130,7 @@ Mon Mar 30 11:29:18 2026
 |=======================================================================================|
 |  No running processes found                                                           |
 +---------------------------------------------------------------------------------------+
-Mon Mar 30 11:29:18 2026       
+Mon Mar 30 12:28:23 2026       
 +---------------------------------------------------------------------------------------+
 | NVIDIA-SMI 535.183.06             Driver Version: 535.183.06   CUDA Version: 12.2     |
 |-----------------------------------------+----------------------+----------------------+
@@ -105,12 +138,12 @@ Mon Mar 30 11:29:18 2026
 | Fan  Temp   Perf          Pwr:Usage/Cap |         Memory-Usage | GPU-Util  Compute M. |
 |                                         |                      |               MIG M. |
 |=========================================+======================+======================|
-|   0  Tesla V100-PCIE-32GB           On  | 00000000:2F:00.0 Off |                    0 |
-| N/A   30C    P0              28W / 250W |      4MiB / 32768MiB |      0%      Default |
+|   0  Tesla V100-PCIE-32GB           Off | 00000000:2F:00.0 Off |                    0 |
+| N/A   32C    P0              27W / 250W |      4MiB / 32768MiB |      0%      Default |
 |                                         |                      |                  N/A |
 +-----------------------------------------+----------------------+----------------------+
-|   1  Tesla V100-PCIE-32GB           On  | 00000000:D8:00.0 Off |                    0 |
-| N/A   28C    P0              26W / 250W |      4MiB / 32768MiB |      0%      Default |
+|   1  Tesla V100-PCIE-32GB           Off | 00000000:D8:00.0 Off |                    0 |
+| N/A   31C    P0              24W / 250W |      4MiB / 32768MiB |      0%      Default |
 |                                         |                      |                  N/A |
 +-----------------------------------------+----------------------+----------------------+
                                                                                          
@@ -125,5 +158,5 @@ Mon Mar 30 11:29:18 2026
 
 PS:
 
-Read file <461832.err> for stderr output of this job.
+Read file <461836.err> for stderr output of this job.
 

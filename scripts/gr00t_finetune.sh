@@ -26,6 +26,8 @@ if [[ -n "${LSB_DJOB_HOSTFILE:-}" && -f "${LSB_DJOB_HOSTFILE}" ]]; then
 
     if (( ${#HOSTS[@]} > 1 )); then
         MASTER_ADDR="${HOSTS[0]}"
+        CURRENT_HOST="$(hostname)"
+        LOCAL_NODE_RANK=""
         echo "Multi-node launch: nnodes=${#HOSTS[@]}, master_addr=${MASTER_ADDR}"
 
         USER_ARGS="$(printf ' %q' "$@")"
@@ -33,8 +35,12 @@ if [[ -n "${LSB_DJOB_HOSTFILE:-}" && -f "${LSB_DJOB_HOSTFILE}" ]]; then
 
         for NODE_RANK in "${!HOSTS[@]}"; do
             HOST="${HOSTS[$NODE_RANK]}"
-            echo "Launching host=${HOST} node_rank=${NODE_RANK}"
+            if [[ "${HOST}" == "${CURRENT_HOST}" ]]; then
+                LOCAL_NODE_RANK="${NODE_RANK}"
+                continue
+            fi
 
+            echo "Launching remote host=${HOST} node_rank=${NODE_RANK}"
             blaunch -z "${HOST}" bash -lc "
                 set -euo pipefail
                 set -x
@@ -53,6 +59,20 @@ if [[ -n "${LSB_DJOB_HOSTFILE:-}" && -f "${LSB_DJOB_HOSTFILE}" ]]; then
                     ${USER_ARGS}
             " &
         done
+
+        if [[ -z "${LOCAL_NODE_RANK}" ]]; then
+            echo "Current host ${CURRENT_HOST} not found in LSF host list: ${HOSTS[*]}" >&2
+            exit 1
+        fi
+
+        echo "Launching local host=${CURRENT_HOST} node_rank=${LOCAL_NODE_RANK}"
+        "${PYTHON_BIN}" "${SCRIPT_DIR}/finetune_policy.py" \
+            --nnodes "${#HOSTS[@]}" \
+            --node-rank "${LOCAL_NODE_RANK}" \
+            --master-addr "${MASTER_ADDR}" \
+            --master-port "${MASTER_PORT}" \
+            --num-gpus "${GPUS_PER_NODE}" \
+            "$@"
 
         wait
         exit 0

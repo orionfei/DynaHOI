@@ -1,0 +1,272 @@
++ REPO_DIR=/gpfsdata/home/liuyifei/DynaHOI
++ SCRIPT_DIR=/gpfsdata/home/liuyifei/DynaHOI/scripts
++ cd /gpfsdata/home/liuyifei/DynaHOI
++ module load gcc/12.1
+++ /usr/bin/modulecmd bash load gcc/12.1
++ eval INCLUDE=/gpfsdata/apps/gcc-12.1.0/include ';export' 'INCLUDE;LD_LIBRARY_PATH=/gpfsdata/apps/gcc-12.1.0/lib64:/gpfsdata/apps/lsf/10.1/linux2.6-glibc2.3-x86_64/lib' ';export' 'LD_LIBRARY_PATH;LOADEDMODULES=gcc/12.1' ';export' 'LOADEDMODULES;PATH=/gpfsdata/apps/gcc-12.1.0/bin:/gpfsdata/apps/lsf/10.1/linux2.6-glibc2.3-x86_64/bin:/gpfsdata/home/liuyifei/git/bin:/gpfsdata/apps/lsf/10.1/linux2.6-glibc2.3-x86_64/etc:/usr/lpp/mmfs/bin:/gpfsdata/home/liuyifei/.vscode-server/bin/8b3775030ed1a69b13e4f4c628c612102e30a681/bin/remote-cli:/gpfsdata/home/liuyifei/git/bin:/usr/lpp/mmfs/bin:/gpfsdata/home/liuyifei/miniconda3/bin:/gpfsdata/home/liuyifei/miniconda3/condabin:/gpfsdata/home/liuyifei/git/bin:/usr/lpp/mmfs/bin:/usr/local/bin:/usr/bin:/opt/ibutils/bin:/usr/local/sbin:/usr/sbin:/gpfsdata/home/liuyifei/.local/bin:/gpfsdata/home/liuyifei/bin' ';export' 'PATH;_LMFILES_=/gpfsdata/Modules/modulefiles//gcc/12.1' ';export' '_LMFILES_;'
+++ INCLUDE=/gpfsdata/apps/gcc-12.1.0/include
+++ export INCLUDE
+++ LD_LIBRARY_PATH=/gpfsdata/apps/gcc-12.1.0/lib64:/gpfsdata/apps/lsf/10.1/linux2.6-glibc2.3-x86_64/lib
+++ export LD_LIBRARY_PATH
+++ LOADEDMODULES=gcc/12.1
+++ export LOADEDMODULES
+++ PATH=/gpfsdata/apps/gcc-12.1.0/bin:/gpfsdata/apps/lsf/10.1/linux2.6-glibc2.3-x86_64/bin:/gpfsdata/home/liuyifei/git/bin:/gpfsdata/apps/lsf/10.1/linux2.6-glibc2.3-x86_64/etc:/usr/lpp/mmfs/bin:/gpfsdata/home/liuyifei/.vscode-server/bin/8b3775030ed1a69b13e4f4c628c612102e30a681/bin/remote-cli:/gpfsdata/home/liuyifei/git/bin:/usr/lpp/mmfs/bin:/gpfsdata/home/liuyifei/miniconda3/bin:/gpfsdata/home/liuyifei/miniconda3/condabin:/gpfsdata/home/liuyifei/git/bin:/usr/lpp/mmfs/bin:/usr/local/bin:/usr/bin:/opt/ibutils/bin:/usr/local/sbin:/usr/sbin:/gpfsdata/home/liuyifei/.local/bin:/gpfsdata/home/liuyifei/bin
+++ export PATH
+++ _LMFILES_=/gpfsdata/Modules/modulefiles//gcc/12.1
+++ export _LMFILES_
++ command -v conda
+++ conda shell.bash hook
++ eval 'export CONDA_EXE='\''/gpfsdata/home/liuyifei/miniconda3/bin/conda'\''
+export _CE_M='\'''\''
+export _CE_CONDA='\'''\''
+export CONDA_PYTHON_EXE='\''/gpfsdata/home/liuyifei/miniconda3/bin/python'\''
+
+# Copyright (C) 2012 Anaconda, Inc
+# SPDX-License-Identifier: BSD-3-Clause
+__conda_exe() (
+    "$CONDA_EXE" $_CE_M $_CE_CONDA "$@"
+)
+
+__conda_hashr() {
+    if [ -n "${ZSH_VERSION:+x}" ]; then
+        \rehash
+    elif [ -n "${POSH_VERSION:+x}" ]; then
+        :  # pass
+    else
+        \hash -r
+    fi
+}
+
+__conda_activate() {
+    if [ -n "${CONDA_PS1_BACKUP:+x}" ]; then
+        # Handle transition from shell activated with conda <= 4.3 to a subsequent activation
+        # after conda updated to >= 4.4. See issue #6173.
+        PS1="$CONDA_PS1_BACKUP"
+        \unset CONDA_PS1_BACKUP
+    fi
+    \local ask_conda
+    ask_conda="$(PS1="${PS1:-}" __conda_exe shell.posix "$@")" || \return
+    \eval "$ask_conda"
+    __conda_hashr
+}
+
+__conda_reactivate() {
+    \local ask_conda
+    ask_conda="$(PS1="${PS1:-}" __conda_exe shell.posix reactivate)" || \return
+    \eval "$ask_conda"
+    __conda_hashr
+}
+
+conda() {
+    \local cmd="${1-__missing__}"
+    case "$cmd" in
+        activate|deactivate)
+            __conda_activate "$@"
+            ;;
+        install|update|upgrade|remove|uninstall)
+            __conda_exe "$@" || \return
+            __conda_reactivate
+            ;;
+        *)
+            __conda_exe "$@"
+            ;;
+    esac
+}
+
+if [ -z "${CONDA_SHLVL+x}" ]; then
+    \export CONDA_SHLVL=0
+    # In dev-mode CONDA_EXE is python.exe and on Windows
+    # it is in a different relative location to condabin.
+    if [ -n "${_CE_CONDA:+x}" ] && [ -n "${WINDIR+x}" ]; then
+        PATH="$(\dirname "$CONDA_EXE")/condabin${PATH:+":${PATH}"}"
+    else
+        PATH="$(\dirname "$(\dirname "$CONDA_EXE")")/condabin${PATH:+":${PATH}"}"
+    fi
+    \export PATH
+
+    # We'\''re not allowing PS1 to be unbound. It must at least be set.
+    # However, we'\''re not exporting it, which can cause problems when starting a second shell
+    # via a first shell (i.e. starting zsh from bash).
+    if [ -z "${PS1+x}" ]; then
+        PS1=
+    fi
+fi
+
+conda activate base'
+++ export CONDA_EXE=/gpfsdata/home/liuyifei/miniconda3/bin/conda
+++ CONDA_EXE=/gpfsdata/home/liuyifei/miniconda3/bin/conda
+++ export _CE_M=
+++ _CE_M=
+++ export _CE_CONDA=
+++ _CE_CONDA=
+++ export CONDA_PYTHON_EXE=/gpfsdata/home/liuyifei/miniconda3/bin/python
+++ CONDA_PYTHON_EXE=/gpfsdata/home/liuyifei/miniconda3/bin/python
+++ '[' -z x ']'
+++ conda activate base
+++ local cmd=activate
+++ case "$cmd" in
+++ __conda_activate activate base
+++ '[' -n '' ']'
+++ local ask_conda
++++ PS1=
++++ __conda_exe shell.posix activate base
++++ /gpfsdata/home/liuyifei/miniconda3/bin/conda shell.posix activate base
+++ ask_conda='PS1='\''(base) '\''
+export PATH='\''/gpfsdata/apps/gcc-12.1.0/bin:/gpfsdata/apps/lsf/10.1/linux2.6-glibc2.3-x86_64/bin:/gpfsdata/home/liuyifei/git/bin:/gpfsdata/apps/lsf/10.1/linux2.6-glibc2.3-x86_64/etc:/usr/lpp/mmfs/bin:/gpfsdata/home/liuyifei/.vscode-server/bin/8b3775030ed1a69b13e4f4c628c612102e30a681/bin/remote-cli:/gpfsdata/home/liuyifei/git/bin:/usr/lpp/mmfs/bin:/gpfsdata/home/liuyifei/miniconda3/bin:/gpfsdata/home/liuyifei/miniconda3/condabin:/gpfsdata/home/liuyifei/git/bin:/usr/lpp/mmfs/bin:/usr/local/bin:/usr/bin:/opt/ibutils/bin:/usr/local/sbin:/usr/sbin:/gpfsdata/home/liuyifei/.local/bin:/gpfsdata/home/liuyifei/bin'\''
+export CONDA_SHLVL='\''1'\''
+export CONDA_PROMPT_MODIFIER='\''(base) '\'''
+++ eval 'PS1='\''(base) '\''
+export PATH='\''/gpfsdata/apps/gcc-12.1.0/bin:/gpfsdata/apps/lsf/10.1/linux2.6-glibc2.3-x86_64/bin:/gpfsdata/home/liuyifei/git/bin:/gpfsdata/apps/lsf/10.1/linux2.6-glibc2.3-x86_64/etc:/usr/lpp/mmfs/bin:/gpfsdata/home/liuyifei/.vscode-server/bin/8b3775030ed1a69b13e4f4c628c612102e30a681/bin/remote-cli:/gpfsdata/home/liuyifei/git/bin:/usr/lpp/mmfs/bin:/gpfsdata/home/liuyifei/miniconda3/bin:/gpfsdata/home/liuyifei/miniconda3/condabin:/gpfsdata/home/liuyifei/git/bin:/usr/lpp/mmfs/bin:/usr/local/bin:/usr/bin:/opt/ibutils/bin:/usr/local/sbin:/usr/sbin:/gpfsdata/home/liuyifei/.local/bin:/gpfsdata/home/liuyifei/bin'\''
+export CONDA_SHLVL='\''1'\''
+export CONDA_PROMPT_MODIFIER='\''(base) '\'''
++++ PS1='(base) '
++++ export PATH=/gpfsdata/apps/gcc-12.1.0/bin:/gpfsdata/apps/lsf/10.1/linux2.6-glibc2.3-x86_64/bin:/gpfsdata/home/liuyifei/git/bin:/gpfsdata/apps/lsf/10.1/linux2.6-glibc2.3-x86_64/etc:/usr/lpp/mmfs/bin:/gpfsdata/home/liuyifei/.vscode-server/bin/8b3775030ed1a69b13e4f4c628c612102e30a681/bin/remote-cli:/gpfsdata/home/liuyifei/git/bin:/usr/lpp/mmfs/bin:/gpfsdata/home/liuyifei/miniconda3/bin:/gpfsdata/home/liuyifei/miniconda3/condabin:/gpfsdata/home/liuyifei/git/bin:/usr/lpp/mmfs/bin:/usr/local/bin:/usr/bin:/opt/ibutils/bin:/usr/local/sbin:/usr/sbin:/gpfsdata/home/liuyifei/.local/bin:/gpfsdata/home/liuyifei/bin
++++ PATH=/gpfsdata/apps/gcc-12.1.0/bin:/gpfsdata/apps/lsf/10.1/linux2.6-glibc2.3-x86_64/bin:/gpfsdata/home/liuyifei/git/bin:/gpfsdata/apps/lsf/10.1/linux2.6-glibc2.3-x86_64/etc:/usr/lpp/mmfs/bin:/gpfsdata/home/liuyifei/.vscode-server/bin/8b3775030ed1a69b13e4f4c628c612102e30a681/bin/remote-cli:/gpfsdata/home/liuyifei/git/bin:/usr/lpp/mmfs/bin:/gpfsdata/home/liuyifei/miniconda3/bin:/gpfsdata/home/liuyifei/miniconda3/condabin:/gpfsdata/home/liuyifei/git/bin:/usr/lpp/mmfs/bin:/usr/local/bin:/usr/bin:/opt/ibutils/bin:/usr/local/sbin:/usr/sbin:/gpfsdata/home/liuyifei/.local/bin:/gpfsdata/home/liuyifei/bin
++++ export CONDA_SHLVL=1
++++ CONDA_SHLVL=1
++++ export 'CONDA_PROMPT_MODIFIER=(base) '
++++ CONDA_PROMPT_MODIFIER='(base) '
+++ __conda_hashr
+++ '[' -n '' ']'
+++ '[' -n '' ']'
+++ hash -r
++ conda activate gr00t
++ local cmd=activate
++ case "$cmd" in
++ __conda_activate activate gr00t
++ '[' -n '' ']'
++ local ask_conda
+++ PS1='(base) '
+++ __conda_exe shell.posix activate gr00t
+++ /gpfsdata/home/liuyifei/miniconda3/bin/conda shell.posix activate gr00t
++ ask_conda='PS1='\''(gr00t) '\''
+export PATH='\''/gpfsdata/apps/gcc-12.1.0/bin:/gpfsdata/apps/lsf/10.1/linux2.6-glibc2.3-x86_64/bin:/gpfsdata/home/liuyifei/git/bin:/gpfsdata/apps/lsf/10.1/linux2.6-glibc2.3-x86_64/etc:/usr/lpp/mmfs/bin:/gpfsdata/home/liuyifei/.vscode-server/bin/8b3775030ed1a69b13e4f4c628c612102e30a681/bin/remote-cli:/gpfsdata/home/liuyifei/git/bin:/usr/lpp/mmfs/bin:/gpfsdata/home/liuyifei/miniconda3/envs/gr00t/bin:/gpfsdata/home/liuyifei/miniconda3/condabin:/gpfsdata/home/liuyifei/git/bin:/usr/lpp/mmfs/bin:/usr/local/bin:/usr/bin:/opt/ibutils/bin:/usr/local/sbin:/usr/sbin:/gpfsdata/home/liuyifei/.local/bin:/gpfsdata/home/liuyifei/bin'\''
+export CONDA_PREFIX='\''/gpfsdata/home/liuyifei/miniconda3/envs/gr00t'\''
+export CONDA_SHLVL='\''2'\''
+export CONDA_DEFAULT_ENV='\''gr00t'\''
+export CONDA_PROMPT_MODIFIER='\''(gr00t) '\''
+export CONDA_PREFIX_1='\''/gpfsdata/home/liuyifei/miniconda3'\''
+export CONDA_EXE='\''/gpfsdata/home/liuyifei/miniconda3/bin/conda'\''
+export _CE_M='\'''\''
+export _CE_CONDA='\'''\''
+export CONDA_PYTHON_EXE='\''/gpfsdata/home/liuyifei/miniconda3/bin/python'\'''
++ eval 'PS1='\''(gr00t) '\''
+export PATH='\''/gpfsdata/apps/gcc-12.1.0/bin:/gpfsdata/apps/lsf/10.1/linux2.6-glibc2.3-x86_64/bin:/gpfsdata/home/liuyifei/git/bin:/gpfsdata/apps/lsf/10.1/linux2.6-glibc2.3-x86_64/etc:/usr/lpp/mmfs/bin:/gpfsdata/home/liuyifei/.vscode-server/bin/8b3775030ed1a69b13e4f4c628c612102e30a681/bin/remote-cli:/gpfsdata/home/liuyifei/git/bin:/usr/lpp/mmfs/bin:/gpfsdata/home/liuyifei/miniconda3/envs/gr00t/bin:/gpfsdata/home/liuyifei/miniconda3/condabin:/gpfsdata/home/liuyifei/git/bin:/usr/lpp/mmfs/bin:/usr/local/bin:/usr/bin:/opt/ibutils/bin:/usr/local/sbin:/usr/sbin:/gpfsdata/home/liuyifei/.local/bin:/gpfsdata/home/liuyifei/bin'\''
+export CONDA_PREFIX='\''/gpfsdata/home/liuyifei/miniconda3/envs/gr00t'\''
+export CONDA_SHLVL='\''2'\''
+export CONDA_DEFAULT_ENV='\''gr00t'\''
+export CONDA_PROMPT_MODIFIER='\''(gr00t) '\''
+export CONDA_PREFIX_1='\''/gpfsdata/home/liuyifei/miniconda3'\''
+export CONDA_EXE='\''/gpfsdata/home/liuyifei/miniconda3/bin/conda'\''
+export _CE_M='\'''\''
+export _CE_CONDA='\'''\''
+export CONDA_PYTHON_EXE='\''/gpfsdata/home/liuyifei/miniconda3/bin/python'\'''
+++ PS1='(gr00t) '
+++ export PATH=/gpfsdata/apps/gcc-12.1.0/bin:/gpfsdata/apps/lsf/10.1/linux2.6-glibc2.3-x86_64/bin:/gpfsdata/home/liuyifei/git/bin:/gpfsdata/apps/lsf/10.1/linux2.6-glibc2.3-x86_64/etc:/usr/lpp/mmfs/bin:/gpfsdata/home/liuyifei/.vscode-server/bin/8b3775030ed1a69b13e4f4c628c612102e30a681/bin/remote-cli:/gpfsdata/home/liuyifei/git/bin:/usr/lpp/mmfs/bin:/gpfsdata/home/liuyifei/miniconda3/envs/gr00t/bin:/gpfsdata/home/liuyifei/miniconda3/condabin:/gpfsdata/home/liuyifei/git/bin:/usr/lpp/mmfs/bin:/usr/local/bin:/usr/bin:/opt/ibutils/bin:/usr/local/sbin:/usr/sbin:/gpfsdata/home/liuyifei/.local/bin:/gpfsdata/home/liuyifei/bin
+++ PATH=/gpfsdata/apps/gcc-12.1.0/bin:/gpfsdata/apps/lsf/10.1/linux2.6-glibc2.3-x86_64/bin:/gpfsdata/home/liuyifei/git/bin:/gpfsdata/apps/lsf/10.1/linux2.6-glibc2.3-x86_64/etc:/usr/lpp/mmfs/bin:/gpfsdata/home/liuyifei/.vscode-server/bin/8b3775030ed1a69b13e4f4c628c612102e30a681/bin/remote-cli:/gpfsdata/home/liuyifei/git/bin:/usr/lpp/mmfs/bin:/gpfsdata/home/liuyifei/miniconda3/envs/gr00t/bin:/gpfsdata/home/liuyifei/miniconda3/condabin:/gpfsdata/home/liuyifei/git/bin:/usr/lpp/mmfs/bin:/usr/local/bin:/usr/bin:/opt/ibutils/bin:/usr/local/sbin:/usr/sbin:/gpfsdata/home/liuyifei/.local/bin:/gpfsdata/home/liuyifei/bin
+++ export CONDA_PREFIX=/gpfsdata/home/liuyifei/miniconda3/envs/gr00t
+++ CONDA_PREFIX=/gpfsdata/home/liuyifei/miniconda3/envs/gr00t
+++ export CONDA_SHLVL=2
+++ CONDA_SHLVL=2
+++ export CONDA_DEFAULT_ENV=gr00t
+++ CONDA_DEFAULT_ENV=gr00t
+++ export 'CONDA_PROMPT_MODIFIER=(gr00t) '
+++ CONDA_PROMPT_MODIFIER='(gr00t) '
+++ export CONDA_PREFIX_1=/gpfsdata/home/liuyifei/miniconda3
+++ CONDA_PREFIX_1=/gpfsdata/home/liuyifei/miniconda3
+++ export CONDA_EXE=/gpfsdata/home/liuyifei/miniconda3/bin/conda
+++ CONDA_EXE=/gpfsdata/home/liuyifei/miniconda3/bin/conda
+++ export _CE_M=
+++ _CE_M=
+++ export _CE_CONDA=
+++ _CE_CONDA=
+++ export CONDA_PYTHON_EXE=/gpfsdata/home/liuyifei/miniconda3/bin/python
+++ CONDA_PYTHON_EXE=/gpfsdata/home/liuyifei/miniconda3/bin/python
++ __conda_hashr
++ '[' -n '' ']'
++ '[' -n '' ']'
++ hash -r
+++ command -v python
++ export PYTHON_BIN=/gpfsdata/home/liuyifei/miniconda3/envs/gr00t/bin/python
++ PYTHON_BIN=/gpfsdata/home/liuyifei/miniconda3/envs/gr00t/bin/python
++ export GPUS_PER_NODE=2
++ GPUS_PER_NODE=2
++ export MASTER_PORT=29500
++ MASTER_PORT=29500
++ export WANDB_PROJECT=GR00T-N1.5-unity
++ WANDB_PROJECT=GR00T-N1.5-unity
++ pwd
++ hostname
++ which python
++ python -V
++ which torchrun
++ echo LSB_DJOB_HOSTFILE=/gpfsdata/home/liuyifei/.lsbatch/1774844899.461836.hostfile
++ [[ -n /gpfsdata/home/liuyifei/.lsbatch/1774844899.461836.hostfile ]]
++ [[ -f /gpfsdata/home/liuyifei/.lsbatch/1774844899.461836.hostfile ]]
++ cat /gpfsdata/home/liuyifei/.lsbatch/1774844899.461836.hostfile
++ echo GPUS_PER_NODE=2
++ echo MASTER_PORT=29500
++ TRAIN_ARGS=(--pipeline motion_hint_farneback --data-config mano_18dim_motion_hint --dataset-path /gpfsdata/home/liuyifei/Dyana_data/train --output-dir /gpfsdata/home/liuyifei/DynaHOI/gr00t/checkpoints/motion_hint_farneback --num-gpus "${GPUS_PER_NODE}" --batch-size 8 --max-steps 4000 --save-steps 4000 --action-horizon 10 --action-dim 18 --motion-hint-ratio 0.25 --motion-hint-num-frames 6 --learning-rate 1.5e-4 --warmup-ratio 0.05 --dataloader-num-workers 4 --report-to wandb)
++ bash /gpfsdata/home/liuyifei/DynaHOI/scripts/gr00t_finetune.sh --pipeline motion_hint_farneback --data-config mano_18dim_motion_hint --dataset-path /gpfsdata/home/liuyifei/Dyana_data/train --output-dir /gpfsdata/home/liuyifei/DynaHOI/gr00t/checkpoints/motion_hint_farneback --num-gpus 2 --batch-size 8 --max-steps 4000 --save-steps 4000 --action-horizon 10 --action-dim 18 --motion-hint-ratio 0.25 --motion-hint-num-frames 6 --learning-rate 1.5e-4 --warmup-ratio 0.05 --dataloader-num-workers 4 --report-to wandb
++++ dirname /gpfsdata/home/liuyifei/DynaHOI/scripts/gr00t_finetune.sh
+++ cd /gpfsdata/home/liuyifei/DynaHOI/scripts
+++ pwd
++ SCRIPT_DIR=/gpfsdata/home/liuyifei/DynaHOI/scripts
+++ cd /gpfsdata/home/liuyifei/DynaHOI/scripts/..
+++ pwd
++ REPO_DIR=/gpfsdata/home/liuyifei/DynaHOI
++ PYTHON_BIN=/gpfsdata/home/liuyifei/miniconda3/envs/gr00t/bin/python
++ GPUS_PER_NODE=2
++ MASTER_PORT=29500
++ cd /gpfsdata/home/liuyifei/DynaHOI
++ export PYTHONPATH=/gpfsdata/home/liuyifei/DynaHOI:
++ PYTHONPATH=/gpfsdata/home/liuyifei/DynaHOI:
++ pwd
++ hostname
++ echo PYTHON_BIN=/gpfsdata/home/liuyifei/miniconda3/envs/gr00t/bin/python
++ echo GPUS_PER_NODE=2
++ echo MASTER_PORT=29500
++ which /gpfsdata/home/liuyifei/miniconda3/envs/gr00t/bin/python
++ /gpfsdata/home/liuyifei/miniconda3/envs/gr00t/bin/python -V
++ which blaunch
++ [[ -n /gpfsdata/home/liuyifei/.lsbatch/1774844899.461836.hostfile ]]
++ [[ -f /gpfsdata/home/liuyifei/.lsbatch/1774844899.461836.hostfile ]]
++ mapfile -t HOSTS
+++ sort -u /gpfsdata/home/liuyifei/.lsbatch/1774844899.461836.hostfile
++ echo 'Resolved hosts: gpu03 gpu05'
++ ((  2 > 1  ))
++ MASTER_ADDR=gpu03
++ echo 'Multi-node launch: nnodes=2, master_addr=gpu03'
+++ printf ' %q' --pipeline motion_hint_farneback --data-config mano_18dim_motion_hint --dataset-path /gpfsdata/home/liuyifei/Dyana_data/train --output-dir /gpfsdata/home/liuyifei/DynaHOI/gr00t/checkpoints/motion_hint_farneback --num-gpus 2 --batch-size 8 --max-steps 4000 --save-steps 4000 --action-horizon 10 --action-dim 18 --motion-hint-ratio 0.25 --motion-hint-num-frames 6 --learning-rate 1.5e-4 --warmup-ratio 0.05 --dataloader-num-workers 4 --report-to wandb
++ USER_ARGS=' --pipeline motion_hint_farneback --data-config mano_18dim_motion_hint --dataset-path /gpfsdata/home/liuyifei/Dyana_data/train --output-dir /gpfsdata/home/liuyifei/DynaHOI/gr00t/checkpoints/motion_hint_farneback --num-gpus 2 --batch-size 8 --max-steps 4000 --save-steps 4000 --action-horizon 10 --action-dim 18 --motion-hint-ratio 0.25 --motion-hint-num-frames 6 --learning-rate 1.5e-4 --warmup-ratio 0.05 --dataloader-num-workers 4 --report-to wandb'
++ USER_ARGS='--pipeline motion_hint_farneback --data-config mano_18dim_motion_hint --dataset-path /gpfsdata/home/liuyifei/Dyana_data/train --output-dir /gpfsdata/home/liuyifei/DynaHOI/gr00t/checkpoints/motion_hint_farneback --num-gpus 2 --batch-size 8 --max-steps 4000 --save-steps 4000 --action-horizon 10 --action-dim 18 --motion-hint-ratio 0.25 --motion-hint-num-frames 6 --learning-rate 1.5e-4 --warmup-ratio 0.05 --dataloader-num-workers 4 --report-to wandb'
++ for NODE_RANK in '"${!HOSTS[@]}"'
++ HOST=gpu03
++ echo 'Launching host=gpu03 node_rank=0'
++ for NODE_RANK in '"${!HOSTS[@]}"'
++ HOST=gpu05
++ echo 'Launching host=gpu05 node_rank=1'
++ wait
++ blaunch -z gpu03 bash -lc '
+                set -euo pipefail
+                set -x
+                cd /gpfsdata/home/liuyifei/DynaHOI
+                export PYTHONPATH=/gpfsdata/home/liuyifei/DynaHOI:${PYTHONPATH:-}
+                export LD_LIBRARY_PATH=${LD_LIBRARY_PATH:-}
+                hostname
+                which /gpfsdata/home/liuyifei/miniconda3/envs/gr00t/bin/python
+                /gpfsdata/home/liuyifei/miniconda3/envs/gr00t/bin/python -V
+                /gpfsdata/home/liuyifei/miniconda3/envs/gr00t/bin/python /gpfsdata/home/liuyifei/DynaHOI/scripts/finetune_policy.py                     --nnodes 2                     --node-rank 0                     --master-addr gpu03                     --master-port 29500                     --num-gpus 2                     --pipeline motion_hint_farneback --data-config mano_18dim_motion_hint --dataset-path /gpfsdata/home/liuyifei/Dyana_data/train --output-dir /gpfsdata/home/liuyifei/DynaHOI/gr00t/checkpoints/motion_hint_farneback --num-gpus 2 --batch-size 8 --max-steps 4000 --save-steps 4000 --action-horizon 10 --action-dim 18 --motion-hint-ratio 0.25 --motion-hint-num-frames 6 --learning-rate 1.5e-4 --warmup-ratio 0.05 --dataloader-num-workers 4 --report-to wandb
+            '
++ blaunch -z gpu05 bash -lc '
+                set -euo pipefail
+                set -x
+                cd /gpfsdata/home/liuyifei/DynaHOI
+                export PYTHONPATH=/gpfsdata/home/liuyifei/DynaHOI:${PYTHONPATH:-}
+                export LD_LIBRARY_PATH=${LD_LIBRARY_PATH:-}
+                hostname
+                which /gpfsdata/home/liuyifei/miniconda3/envs/gr00t/bin/python
+                /gpfsdata/home/liuyifei/miniconda3/envs/gr00t/bin/python -V
+                /gpfsdata/home/liuyifei/miniconda3/envs/gr00t/bin/python /gpfsdata/home/liuyifei/DynaHOI/scripts/finetune_policy.py                     --nnodes 2                     --node-rank 1                     --master-addr gpu03                     --master-port 29500                     --num-gpus 2                     --pipeline motion_hint_farneback --data-config mano_18dim_motion_hint --dataset-path /gpfsdata/home/liuyifei/Dyana_data/train --output-dir /gpfsdata/home/liuyifei/DynaHOI/gr00t/checkpoints/motion_hint_farneback --num-gpus 2 --batch-size 8 --max-steps 4000 --save-steps 4000 --action-horizon 10 --action-dim 18 --motion-hint-ratio 0.25 --motion-hint-num-frames 6 --learning-rate 1.5e-4 --warmup-ratio 0.05 --dataloader-num-workers 4 --report-to wandb
+            '
++ exit 0

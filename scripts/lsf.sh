@@ -46,7 +46,6 @@ TRAIN_ARGS=(
   --data-config mano_18dim_motion_hint
   --dataset-path /gpfsdata/home/liuyifei/Dyana_data/train
   --output-dir /gpfsdata/home/liuyifei/DynaHOI/gr00t/checkpoints/motion_hint_farneback
-  --num-gpus "${GPUS_PER_NODE}"
   --batch-size 8
   --max-steps 4000
   --save-steps 4000
