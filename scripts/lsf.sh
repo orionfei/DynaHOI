@@ -7,7 +7,6 @@
 #BSUB -e %J.err
 
 set -euo pipefail
-set -x
 
 REPO_DIR="/gpfsdata/home/liuyifei/DynaHOI"
 SCRIPT_DIR="${REPO_DIR}/scripts"
@@ -28,18 +27,6 @@ export PYTHON_BIN="$(command -v python)"
 export GPUS_PER_NODE="${GPUS_PER_NODE:-2}"
 export MASTER_PORT="${MASTER_PORT:-29500}"
 export WANDB_PROJECT="${WANDB_PROJECT:-GR00T-N1.5-unity}"
-
-pwd
-hostname
-which python
-python -V
-which torchrun
-echo "LSB_DJOB_HOSTFILE=${LSB_DJOB_HOSTFILE:-}"
-if [[ -n "${LSB_DJOB_HOSTFILE:-}" && -f "${LSB_DJOB_HOSTFILE}" ]]; then
-    cat "${LSB_DJOB_HOSTFILE}"
-fi
-echo "GPUS_PER_NODE=${GPUS_PER_NODE}"
-echo "MASTER_PORT=${MASTER_PORT}"
 
 TRAIN_ARGS=(
   --pipeline motion_hint_farneback
