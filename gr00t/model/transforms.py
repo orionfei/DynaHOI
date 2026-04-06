@@ -130,9 +130,9 @@ class GR00TTransform(InvertibleModalityTransform):
     embodiment_tag: EmbodimentTag | None = None
 
     # Define model type, "base" means origin GR00T-N1.5, "baseline" means ObAct
-    vlm_type: Literal["base", "baseline", "motion_hint"] = Field(
+    vlm_type: Literal["base", "baseline", "motion_hint", "baseline_motion_hint"] = Field(
         default="base", 
-        description="Choice of VLM processing logic: 'base', 'baseline', or 'motion_hint'"
+        description="Choice of VLM processing logic: 'base', 'baseline', 'motion_hint', or 'baseline_motion_hint'"
     )
     window_length: int = Field(
         default=5,
@@ -313,7 +313,7 @@ class GR00TTransform(InvertibleModalityTransform):
             {
                 "type": "text",
                 "text": (
-                    "The first image is a precomputed motion hint from the first 20% of the trajectory. "
+                    "The first image is a precomputed motion hint from the first 25% of the trajectory. "
                     "The second image is the current observation frame.\nMotion hint:\n"
                 ),
             },
@@ -322,6 +322,84 @@ class GR00TTransform(InvertibleModalityTransform):
             eagle_image_objs[1],
             {"type": "text", "text": f"\nTask: {lang}"},
         ]
+
+    def _validate_baseline_motion_hint_images(self, images: np.ndarray) -> None:
+        if images.ndim != 5:
+            raise ValueError(
+                "Baseline+motion-hint VLM expects images with shape [V, T, C, H, W], "
+                f"got {images.shape}."
+            )
+        if images.shape[0] != 1:
+            raise ValueError(
+                f"Baseline+motion-hint VLM expects a single video stream, got {images.shape[0]}."
+            )
+        expected_frames = self.window_length + 2
+        if images.shape[1] != expected_frames:
+            raise ValueError(
+                f"Baseline+motion-hint VLM expects {expected_frames} frames "
+                f"({self.window_length} adjacent history + 1 motion hint + 1 current), "
+                f"got {images.shape[1]}."
+            )
+
+    def _build_baseline_motion_hint_conversation(
+        self,
+        eagle_image_objs: list[dict],
+        lang: str,
+    ) -> list[dict]:
+        history_images = eagle_image_objs[: self.window_length]
+        motion_hint_image = eagle_image_objs[self.window_length]
+        current_image = eagle_image_objs[self.window_length + 1]
+        prompt_prefix = (
+            f"The first {self.window_length} images are the adjacent frames immediately before the "
+            "current observation. The next image is a precomputed motion hint summarizing the moving "
+            "object trajectory during the first part of the episode. The last image is the current frame.\n"
+            "Adjacent history:\n"
+        )
+        return [
+            {"type": "text", "text": prompt_prefix},
+            *history_images,
+            {"type": "text", "text": "\nTrajectory motion hint:\n"},
+            motion_hint_image,
+            {"type": "text", "text": "\nCurrent frame:\n"},
+            current_image,
+            {"type": "text", "text": f"\nTask: {lang}"},
+        ]
+
+    def _apply_vlm_processing_baseline_motion_hint(self, batch: dict) -> dict:
+        images = batch["images"]
+        self._validate_baseline_motion_hint_images(images)
+        np_images = rearrange(images, "v t c h w -> (t v) c h w")
+
+        lang = batch["language"]
+        if isinstance(lang, list):
+            lang = lang[0]
+
+        eagle_images_pil = [Image.fromarray(np.transpose(v, (1, 2, 0))) for v in np_images]
+        eagle_image_objs = [{"type": "image", "image": img} for img in eagle_images_pil]
+        conversation_content = self._build_baseline_motion_hint_conversation(eagle_image_objs, lang)
+
+        eagle_conversation = [
+            {
+                "role": "user",
+                "content": conversation_content,
+            }
+        ]
+
+        text_list = [
+            self.eagle_processor.apply_chat_template(
+                eagle_conversation, tokenize=False, add_generation_prompt=True
+            )
+        ]
+        image_inputs, video_inputs = self.eagle_processor.process_vision_info(eagle_conversation)
+
+        eagle_content = {
+            "image_inputs": image_inputs,
+            "video_inputs": video_inputs,
+            "text_list": text_list,
+        }
+        inputs = {}
+        inputs["eagle_content"] = eagle_content
+        return inputs
 
     def _apply_vlm_processing_motion_hint(self, batch: dict) -> dict:
         images = batch["images"]
@@ -459,6 +537,8 @@ class GR00TTransform(InvertibleModalityTransform):
             vlm_outputs = self._apply_vlm_processing_baseline(batch_data)
         elif self.vlm_type == "motion_hint":
             vlm_outputs = self._apply_vlm_processing_motion_hint(batch_data)
+        elif self.vlm_type == "baseline_motion_hint":
+            vlm_outputs = self._apply_vlm_processing_baseline_motion_hint(batch_data)
         else:
             raise ValueError(f"Invalid vlm_type: {self.vlm_type}")
         

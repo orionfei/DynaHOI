@@ -5,7 +5,7 @@ from typing import Tuple
 
 DEFAULT_FILE_PATH = (
     "/data1/yfl_data/DynaHOI/scripts/evaluation_results/"
-    "gr00t.jsonl"
+    "w5_h10.jsonl"
 )
 
 
@@ -61,6 +61,7 @@ def main():
     total_count = 0
     success_count = 0
     score_sum = 0.0
+    e_loc_sum = 0.0
     q_smooth_sum = 0.0
     q_line_sum = 0.0
     r_time_sum = 0.0
@@ -75,6 +76,7 @@ def main():
 
             success = bool(require_field(data, "success", line_no))
             score = float(require_field(data, "score", line_no))
+            e_loc = float(require_field(data, "min_XZ", line_no))
             q_smooth = float(require_field(data, "smoothness_var", line_no))
             q_line = float(require_field(data, "linearity", line_no))
             completion_raw = require_field(data, "successIndex / total_frames", line_no)
@@ -85,6 +87,7 @@ def main():
             total_count += 1
             success_count += int(success)
             score_sum += score
+            e_loc_sum += e_loc
             q_smooth_sum += q_smooth
             q_line_sum += q_line
             r_time_sum += r_time
@@ -94,6 +97,7 @@ def main():
 
     success_rate = success_count / total_count
     avg_score = score_sum / total_count
+    avg_e_loc = e_loc_sum / total_count
     avg_q_smooth = q_smooth_sum / total_count
     avg_q_line = q_line_sum / total_count
     avg_r_time = r_time_sum / total_count
@@ -103,10 +107,10 @@ def main():
     print(f"success_count = {success_count}")
     print(f"success_rate = {success_rate:.6f}")
     print(f"avg_score = {avg_score:.6f}")
+    print(f"avg_e_loc = {avg_e_loc:.6f}")
     print(f"avg_q_smooth = {avg_q_smooth:.6f}")
     print(f"avg_q_line = {avg_q_line:.6f}")
     print(f"avg_r_time = {avg_r_time:.6f}")
-
 
 if __name__ == "__main__":
     main()

@@ -15,6 +15,7 @@ from gr00t.model.transforms import GR00TTransform
 from gr00t.utils.eval import (
     get_and_send_action,
     get_and_send_action_baseline,
+    get_and_send_action_baseline_motion_hint,
     get_and_send_action_motion_hint,
 )
 
@@ -102,8 +103,11 @@ def set_baseline_window_length(transform: ComposedModalityTransform, window_leng
         raise ValueError(f"Expected exactly one GR00TTransform, found {len(gr00t_transforms)}.")
 
     gr00t_transform = gr00t_transforms[0]
-    if gr00t_transform.vlm_type != "baseline":
-        raise ValueError(f"Expected baseline GR00TTransform, got {gr00t_transform.vlm_type}.")
+    if gr00t_transform.vlm_type not in {"baseline", "baseline_motion_hint"}:
+        raise ValueError(
+            "Expected baseline-style GR00TTransform, got "
+            f"{gr00t_transform.vlm_type}."
+        )
     ensure_positive(window_length, "window_length")
     gr00t_transform.window_length = window_length
 
@@ -364,6 +368,47 @@ def build_motion_hint_eval_dataset(args: Any, modality_config: dict[str, Any]) -
     )
 
 
+def build_baseline_motion_hint_train_dataset(
+    config: Any,
+    embodiment_tag: EmbodimentTag,
+    modality_configs: dict[str, Any],
+    transforms: ComposedModalityTransform,
+) -> LeRobotSingleDataset:
+    if len(config.dataset_path) != 1:
+        raise ValueError(
+            "baseline_adjacent_window_motion_hint_farneback expects exactly one dataset path, "
+            f"got {len(config.dataset_path)}."
+        )
+    return LeRobotSingleDataset(
+        dataset_path=config.dataset_path[0],
+        modality_configs=modality_configs,
+        transforms=transforms,
+        embodiment_tag=embodiment_tag,
+        video_backend=config.video_backend,
+        add_observe_frames=True,
+        observe_frame_num=config.window_length,
+        use_motion_hint=True,
+        motion_hint_ratio=config.motion_hint_ratio,
+        motion_hint_num_frames=config.motion_hint_num_frames,
+    )
+
+
+def build_baseline_motion_hint_eval_dataset(args: Any, modality_config: dict[str, Any]) -> LeRobotSingleDataset:
+    return LeRobotSingleDataset(
+        dataset_path=args.dataset_path,
+        modality_configs=modality_config,
+        video_backend=args.video_backend,
+        video_backend_kwargs=None,
+        transforms=None,
+        embodiment_tag=args.embodiment_tag,
+        add_observe_frames=True,
+        observe_frame_num=args.window_length,
+        use_motion_hint=True,
+        motion_hint_ratio=args.motion_hint_ratio,
+        motion_hint_num_frames=args.motion_hint_num_frames,
+    )
+
+
 def _normalize_dataset_tag(dataset_path: str) -> str:
     return dataset_path.split("/")[-1].replace("_unity", "")
 
@@ -403,6 +448,14 @@ def build_baseline_eval_result_tag(args: Any) -> str:
 def build_motion_hint_eval_result_tag(args: Any) -> str:
     dataset_tag = _normalize_dataset_tag(args.dataset_path)
     return f"{args.pipeline}:{dataset_tag}"
+
+
+def build_baseline_motion_hint_eval_result_tag(args: Any) -> str:
+    dataset_tag = _normalize_dataset_tag(args.dataset_path)
+    return (
+        f"{args.pipeline}:window_{args.window_length}:"
+        f"ratio_{args.motion_hint_ratio}:frames_{args.motion_hint_num_frames}:{dataset_tag}"
+    )
 
 
 def run_standard_eval_rollout(
@@ -512,6 +565,45 @@ def run_motion_hint_eval_rollout(
     print(f"Total time taken: {total_time} seconds")
 
 
+def run_baseline_motion_hint_eval_rollout(
+    args: Any,
+    server: Any,
+    policy: Any,
+    dataset: LeRobotSingleDataset,
+    metrics_json_path: str,
+    traj_store_path: str,
+):
+    trajectory_lengths = dataset.trajectory_lengths
+    total_time = 0
+    for traj_id in args.trajs:
+        if not dataset.is_motion_hint_trajectory_available(traj_id):
+            print(f"Skipping trajectory {traj_id}: motion hint is unavailable.")
+            continue
+        start_time = datetime.now().timestamp()
+        for repeat_idx in range(args.repeat_num):
+            print("=============================================")
+            print(f"Running trajectory: {traj_id}, repeat: {repeat_idx}")
+            completed = get_and_send_action_baseline_motion_hint(
+                server,
+                policy,
+                dataset,
+                traj_id,
+                repeat_num=repeat_idx,
+                modality_keys=args.modality_keys,
+                steps=int(trajectory_lengths[traj_id]),
+                action_horizon=args.action_horizon,
+                metrics_json_path=metrics_json_path,
+                traj_store_path=traj_store_path,
+                window_length=args.window_length,
+            )
+            if not completed:
+                continue
+        end_time = datetime.now().timestamp()
+        print(f"Time taken: {end_time - start_time} seconds")
+        total_time += end_time - start_time
+    print(f"Total time taken: {total_time} seconds")
+
+
 def no_op_transform(_: Any, __: ComposedModalityTransform):
     return
 
@@ -562,6 +654,18 @@ def validate_motion_hint_train_args(config: Any):
         )
 
 
+def validate_baseline_motion_hint_train_args(config: Any):
+    ensure_exact(config.action_dim, 18, "action_dim")
+    ensure_positive(config.action_horizon, "action_horizon")
+    ensure_positive(config.window_length, "window_length")
+    ensure_positive(config.motion_hint_num_frames, "motion_hint_num_frames")
+    if not (0.0 < config.motion_hint_ratio < 1.0):
+        raise ValueError(
+            "motion_hint_ratio must be in (0, 1) for pipeline "
+            f"'baseline_adjacent_window_motion_hint_farneback', got {config.motion_hint_ratio}."
+        )
+
+
 def validate_our_eval_args(args: Any):
     ensure_exact(args.action_dim, 18, "action_dim")
     if args.window_length != 0:
@@ -595,6 +699,18 @@ def validate_motion_hint_eval_args(args: Any):
     if args.window_length != 0:
         raise ValueError(
             f"window_length is unsupported for pipeline 'motion_hint_farneback', got {args.window_length}."
+        )
+
+
+def validate_baseline_motion_hint_eval_args(args: Any):
+    ensure_exact(args.action_dim, 18, "action_dim")
+    ensure_positive(args.action_horizon, "action_horizon")
+    ensure_positive(args.window_length, "window_length")
+    ensure_positive(args.motion_hint_num_frames, "motion_hint_num_frames")
+    if not (0.0 < args.motion_hint_ratio < 1.0):
+        raise ValueError(
+            "motion_hint_ratio must be in (0, 1) for pipeline "
+            f"'baseline_adjacent_window_motion_hint_farneback', got {args.motion_hint_ratio}."
         )
 
 
@@ -686,6 +802,20 @@ register_train_pipeline("motion_hint_farneback")(
     )
 )
 
+register_train_pipeline("baseline_adjacent_window_motion_hint_farneback")(
+    TrainPipelineSpec(
+        name="baseline_adjacent_window_motion_hint_farneback",
+        validate_args=validate_baseline_motion_hint_train_args,
+        configure_data_config=configure_motion_hint_data_config,
+        configure_transform=lambda config, transform: set_baseline_window_length(
+            transform, config.window_length
+        ),
+        build_train_dataset=build_baseline_motion_hint_train_dataset,
+        configure_model_for_train=configure_our_model_for_train,
+        resolve_output_dir=resolve_output_dir_with_timestamp,
+    )
+)
+
 register_eval_pipeline("our_18d")(
     EvalPipelineSpec(
         name="our_18d",
@@ -706,7 +836,16 @@ register_eval_pipeline("baseline_adjacent_window")(
         configure_transform=lambda args, transform: set_baseline_window_length(
             transform, args.window_length
         ),
-        build_eval_dataset=build_default_eval_dataset,
+        build_eval_dataset=lambda args, modality_config: LeRobotSingleDataset(
+            dataset_path=args.dataset_path,
+            modality_configs=modality_config,
+            video_backend=args.video_backend,
+            video_backend_kwargs=None,
+            transforms=None,
+            embodiment_tag=args.embodiment_tag,
+            add_observe_frames=True,
+            observe_frame_num=args.window_length,
+        ),
         run_eval_rollout=run_baseline_eval_rollout,
         build_result_tag=build_baseline_eval_result_tag,
     )
@@ -721,5 +860,19 @@ register_eval_pipeline("motion_hint_farneback")(
         build_eval_dataset=build_motion_hint_eval_dataset,
         run_eval_rollout=run_motion_hint_eval_rollout,
         build_result_tag=build_motion_hint_eval_result_tag,
+    )
+)
+
+register_eval_pipeline("baseline_adjacent_window_motion_hint_farneback")(
+    EvalPipelineSpec(
+        name="baseline_adjacent_window_motion_hint_farneback",
+        validate_args=validate_baseline_motion_hint_eval_args,
+        configure_data_config=configure_motion_hint_data_config,
+        configure_transform=lambda args, transform: set_baseline_window_length(
+            transform, args.window_length
+        ),
+        build_eval_dataset=build_baseline_motion_hint_eval_dataset,
+        run_eval_rollout=run_baseline_motion_hint_eval_rollout,
+        build_result_tag=build_baseline_motion_hint_eval_result_tag,
     )
 )

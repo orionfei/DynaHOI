@@ -22,19 +22,20 @@ from gr00t.model.gr00t_n1 import GR00T_N1_5
 from gr00t.utils.peft import get_lora_model
 
 os.environ["WANDB_PROJECT"] = "GR00T-N1.5-unity"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3"
 
 @dataclass
 class TrainArgsConfig:
-    pipeline: str = "motion_hint_farneback"
+    pipeline: str = "baseline_adjacent_window"
     """Registered train pipeline name."""
 
     dataset_path: List[str] = field(default_factory=lambda: ["/data1/yfl_data/Dyana_data/train"])
     """Path to the dataset directory or directories."""
 
-    output_dir: str = "/data1/yfl_data/DynaHOI/gr00t/checkpoints/motion_hint_farneback/"
+    output_dir: str = "/data1/yfl_data/DynaHOI/gr00t/checkpoints/adjacent_window/W3_H10"
     """Directory to save model checkpoints."""
 
-    data_config: Literal[tuple(DATA_CONFIG_MAP.keys())] = "mano_18dim_motion_hint"
+    data_config: Literal[tuple(DATA_CONFIG_MAP.keys())] = "mano_18dim_baseline"
     """Data configuration name from DATA_CONFIG_MAP."""
 
     batch_size: int = 8
@@ -58,7 +59,7 @@ class TrainArgsConfig:
     master_port: int = 29500
     """Master node port used by the internal torchrun launcher."""
 
-    save_steps: int = 4000
+    save_steps: int = 40000
     """Number of steps between saving checkpoints."""
 
     action_horizon: int = 10
@@ -118,7 +119,7 @@ class TrainArgsConfig:
     video_backend: Literal["decord", "torchvision_av"] = "decord"
     """Video backend to use for training."""
 
-    window_length: int = 0
+    window_length: int = 3
     """Adjacent history frame count for pipelines that support it."""
 
     motion_hint_ratio: float = 0.25

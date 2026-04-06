@@ -623,6 +623,146 @@ def get_and_send_action_motion_hint(
     return True
 
 
+def get_and_send_action_baseline_motion_hint(
+    server: UnityServer,
+    policy: BasePolicy,
+    dataset: LeRobotSingleDataset,
+    traj_id: int,
+    repeat_num: int,
+    modality_keys: list,
+    steps=300,
+    action_horizon=16,
+    metrics_json_path: str = "/mnt/sdc/bch/forBenchmark/Isaac-GR00T/evaluation_results",
+    traj_store_path: str = "",
+    do_save_traj: bool = True,
+    window_length: int = 5,
+):
+    if action_horizon <= 0:
+        raise ValueError(f"action_horizon must be positive, got {action_horizon}.")
+    if window_length <= 0:
+        raise ValueError(f"window_length must be positive, got {window_length}.")
+
+    motion_hint_start_index = dataset.get_motion_hint_start_index(traj_id)
+    start_frame_idx = max(window_length, motion_hint_start_index)
+    if steps <= start_frame_idx:
+        print(
+            f"⚠️ Skipping traj_id={traj_id}, repeat={repeat_num}: "
+            f"trajectory length {steps} is not enough for combined baseline+motion-hint start index {start_frame_idx}."
+        )
+        return False
+
+    unity_meta = dataset.get_unity_meta(traj_id)
+    motion_hint = dataset.get_motion_hint(traj_id)
+
+    success = server.send_start_episode_sync(
+        unity_meta["episode"],
+        unity_meta["task_type"],
+        repeat_num,
+        steps,
+        start_frame_idx * 3,
+        action_horizon,
+    )
+    if not success:
+        raise RuntimeError(f"Failed to send start_episode, traj_id: {traj_id}")
+
+    task_dict = {
+        "circular": "Grab the object in the video that is making a circular motion",
+        "linear": "Grab the object in the video that is making a straight motion",
+        "harmonic": "Grab the object in the video that is doing simple harmonic motion",
+    }
+
+    trajectory = []
+    for step_count in range(start_frame_idx, steps):
+        if (step_count - start_frame_idx) % action_horizon == 0:
+            obs = server.get_obs(block=True)
+            ego_cur = obs["video.ego_view"]
+            if ego_cur.shape[0] != 1:
+                raise ValueError(
+                    "Combined baseline+motion-hint evaluation expects a single current frame, "
+                    f"got {ego_cur.shape}."
+                )
+
+            obs_history_frames = dataset.get_adjacent_observe_frames(
+                traj_id,
+                "video.ego_view",
+                step_count,
+            )
+            target_height = ego_cur.shape[1]
+            target_width = ego_cur.shape[2]
+            obs_history_frames = np.stack(
+                [
+                    cv2.resize(frame, (target_width, target_height), interpolation=cv2.INTER_LINEAR)
+                    for frame in obs_history_frames
+                ],
+                axis=0,
+            )
+            resized_hint = cv2.resize(
+                motion_hint,
+                (target_width, target_height),
+                interpolation=cv2.INTER_LINEAR,
+            )
+            ego_seq = np.concatenate(
+                [
+                    obs_history_frames.astype(ego_cur.dtype),
+                    resized_hint[None, ...].astype(ego_cur.dtype),
+                    ego_cur,
+                ],
+                axis=0,
+            )
+            expected_frame_count = window_length + 2
+            if ego_seq.shape[0] != expected_frame_count:
+                raise ValueError(
+                    f"Expected {expected_frame_count} combined frames after concatenation, got {ego_seq.shape[0]}."
+                )
+            obs["video.ego_view"] = ego_seq
+            obs["annotation.human.action.task_description"] = [task_dict[unity_meta["task_type"]]]
+
+            action_chunk = policy.get_action(obs)
+            print(f"✅ Inference successful, current step: {step_count} / {steps}")
+            action_chunk = action_chunk["action.left_hand"][:, :18]
+            if step_count + action_horizon > steps:
+                action_chunk = action_chunk[: steps - step_count]
+            success = server.send_action_data_sync(action_chunk)
+            if not success:
+                print(f"⚠️ Failed to send action data, current step: {step_count}/ {steps}")
+            else:
+                print(f"✅ Action data sent successfully, current step: {step_count} / {steps}")
+                trajectory.extend(action_chunk)
+
+    metrics_unity = server.get_metrics_from_unity(block=True)
+    episode_id = metrics_unity.pop("episode_id")
+    repeat_num_receive = metrics_unity.pop("repeat")
+    successIndex = metrics_unity.pop("successIndex")
+
+    if unity_meta["episode"] != episode_id:
+        print(f"❌ episode_id mismatch, Unity side: {episode_id}, Python side: {unity_meta['episode']}")
+        print(f"metrics_unity: {metrics_unity}, successIndex: {successIndex}")
+        raise RuntimeError("episode_id mismatch")
+    if repeat_num_receive != repeat_num:
+        print(f"❌ repeat_num mismatch, Unity side: {repeat_num_receive}, Python side: {repeat_num}")
+        print(f"metrics_unity: {metrics_unity}, successIndex: {successIndex}")
+        raise RuntimeError("repeat_num mismatch")
+
+    trajectory_to_save = np.array(trajectory)
+    trajectory = trajectory_to_save[:successIndex]
+    if do_save_traj:
+        np.save(os.path.join(traj_store_path, f"traj_{traj_id}:repeat{repeat_num}.npy"), trajectory_to_save)
+
+    metrics = evaluate_traj2(trajectory)
+    result = {
+        "traj_id": traj_id,
+        "repeat_num": repeat_num,
+        "episode": int(unity_meta["episode"]),
+        "task_type": unity_meta["task_type"],
+        **metrics,
+        **metrics_unity,
+        "successIndex / total_frames": f"{successIndex} / {steps}",
+    }
+    with open(os.path.join(metrics_json_path), "a") as f:
+        f.write(json.dumps(result) + "\n")
+    return True
+
+
 def evaluate_traj2(traj: np.ndarray):
     """
     Evaluate trajectory smoothness and linearity

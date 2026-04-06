@@ -268,8 +268,6 @@ class LeRobotSingleDataset(Dataset):
                 raise ValueError(
                     f"motion_hint_num_frames must be at least 2, got {self.motion_hint_num_frames}."
                 )
-        if self.add_observe_frames and self.use_motion_hint:
-            raise ValueError("add_observe_frames and use_motion_hint cannot both be enabled.")
         self._dataset_path = Path(dataset_path)
         self._dataset_name = self._dataset_path.name
         self.motion_hint_cache_dir = get_motion_hint_cache_dir(
@@ -535,14 +533,16 @@ class LeRobotSingleDataset(Dataset):
         """
         all_steps: list[tuple[int, int]] = []
         for trajectory_id, trajectory_length in zip(self.trajectory_ids, self.trajectory_lengths):
+            start_index = 0
             if self.add_observe_frames:
-                start_index = self.observe_frame_num
-            elif self.use_motion_hint:
+                start_index = max(start_index, self.observe_frame_num)
+            if self.use_motion_hint:
                 if int(trajectory_id) not in self._valid_motion_hint_trajectory_ids:
                     continue
-                start_index = _compute_motion_hint_frame_count(int(trajectory_length), self.motion_hint_ratio)
-            else:
-                start_index = 0
+                start_index = max(
+                    start_index,
+                    _compute_motion_hint_frame_count(int(trajectory_length), self.motion_hint_ratio),
+                )
             for base_index in range(start_index, trajectory_length):
                 all_steps.append((trajectory_id, base_index))
         return all_steps
@@ -876,39 +876,32 @@ class LeRobotSingleDataset(Dataset):
         # Get the corresponding video timestamps from the step indices
         video_timestamp = timestamp[step_indices]
 
-        if self.add_observe_frames:
+        current_frames = get_frames_by_timestamps(
+            video_path.as_posix(),
+            video_timestamp,
+            video_backend=self.video_backend,
+            video_backend_kwargs=self.video_backend_kwargs,
+        )  # ndarray format frames, shape: (T, H, W, C)
+
+        if self.add_observe_frames or self.use_motion_hint:
             if len(step_indices) != 1:
                 raise ValueError(
-                    f"Adjacent-history baseline expects a single current frame, got {len(step_indices)} steps."
+                    "Adjacent-history and motion-hint pipelines expect a single current frame, "
+                    f"got {len(step_indices)} steps."
                 )
+
+        if self.add_observe_frames and self.use_motion_hint:
             observe_frames = self.get_adjacent_observe_frames(trajectory_id, key, base_index)
-            current_frames = get_frames_by_timestamps(
-                video_path.as_posix(),
-                video_timestamp,
-                video_backend=self.video_backend,
-                video_backend_kwargs=self.video_backend_kwargs,
-            )  # ndarray format frames, shape: (T, H, W, C)
+            motion_hint = self.get_motion_hint(trajectory_id)
+            frames = np.concatenate([observe_frames, motion_hint[None, ...], current_frames], axis=0)
+        elif self.add_observe_frames:
+            observe_frames = self.get_adjacent_observe_frames(trajectory_id, key, base_index)
             frames = np.concatenate([observe_frames, current_frames], axis=0)
         elif self.use_motion_hint:
-            if len(step_indices) != 1:
-                raise ValueError(
-                    f"Motion-hint pipeline expects a single current frame, got {len(step_indices)} steps."
-                )
-            current_frames = get_frames_by_timestamps(
-                video_path.as_posix(),
-                video_timestamp,
-                video_backend=self.video_backend,
-                video_backend_kwargs=self.video_backend_kwargs,
-            )
             motion_hint = self.get_motion_hint(trajectory_id)
             frames = np.concatenate([motion_hint[None, ...], current_frames], axis=0)
         else:
-            frames = get_frames_by_timestamps(
-                video_path.as_posix(),
-                video_timestamp,
-                video_backend=self.video_backend,
-                video_backend_kwargs=self.video_backend_kwargs,
-            )  # ndarray format frames, shape: (T, H, W, C)
+            frames = current_frames
 
     
         size = 256

@@ -3,7 +3,7 @@ import json
 import os
 
 os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
-os.environ["CUDA_VISIBLE_DEVICES"] = "4"
+os.environ["CUDA_VISIBLE_DEVICES"] = "7"
 
 import asyncio
 import random
@@ -99,7 +99,7 @@ class EvalArgsConfig:
     repeat_num: int = 1
     """Number of times to repeat the evaluation for each episode."""
 
-    action_horizon: int = 5
+    action_horizon: int = 10
     """Action horizon to evaluate."""
 
     action_dim: int = 18
@@ -114,10 +114,10 @@ class EvalArgsConfig:
     embodiment_tag: Literal[tuple(EMBODIMENT_TAG_MAPPING.keys())] = "new_embodiment"
     """Embodiment tag to use."""
 
-    model_path: str | None = "/data1/yfl_data/DynaHOI/gr00t/checkpoints/adjacent_window/adjacent_window_5/checkpoint-4000"
+    model_path: str | None = "/data1/yfl_data/DynaHOI/gr00t/checkpoints/adjacent_window/checkpoint-4000"
     """Path to the model checkpoint."""
 
-    window_length: int = 5
+    window_length: int = 1
     """Adjacent history frame count for pipelines that support it."""
 
     motion_hint_ratio: float = 0.25

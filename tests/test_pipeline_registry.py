@@ -12,11 +12,21 @@ class PipelineRegistryTest(unittest.TestCase):
     def test_expected_pipeline_names_are_registered(self):
         self.assertEqual(
             sorted(TRAIN_PIPELINES),
-            ["baseline_adjacent_window", "motion_hint_farneback", "our_18d"],
+            [
+                "baseline_adjacent_window",
+                "baseline_adjacent_window_motion_hint_farneback",
+                "motion_hint_farneback",
+                "our_18d",
+            ],
         )
         self.assertEqual(
             sorted(EVAL_PIPELINES),
-            ["baseline_adjacent_window", "motion_hint_farneback", "our_18d"],
+            [
+                "baseline_adjacent_window",
+                "baseline_adjacent_window_motion_hint_farneback",
+                "motion_hint_farneback",
+                "our_18d",
+            ],
         )
 
     def test_train_and_eval_pipeline_pairs_exist(self):
