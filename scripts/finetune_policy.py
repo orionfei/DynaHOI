@@ -86,7 +86,7 @@ class TrainArgsConfig:
     resume: bool = False
     """Whether to resume from a checkpoint."""
 
-    learning_rate: float = 1.5e-4
+    learning_rate: float = 1e-4
     """Learning rate for training."""
 
     weight_decay: float = 1e-5

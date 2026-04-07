@@ -32,18 +32,6 @@ from gr00t.model.gr00t_n1 import GR00T_N1_5
 COMPUTE_DTYPE = torch.bfloat16
 
 
-def _load_matching_state_dict(module: torch.nn.Module, source_state_dict: Dict[str, torch.Tensor]) -> tuple[int, int]:
-    target_state_dict = module.state_dict()
-    compatible_state_dict = {
-        key: value
-        for key, value in source_state_dict.items()
-        if key in target_state_dict and target_state_dict[key].shape == value.shape
-    }
-    skipped_count = len(source_state_dict) - len(compatible_state_dict)
-    module.load_state_dict(compatible_state_dict, strict=False)
-    return len(compatible_state_dict), skipped_count
-
-
 class BasePolicy(ABC):
     @abstractmethod
     def get_action(self, observations: Dict[str, Any]) -> Dict[str, Any]:
@@ -277,15 +265,7 @@ class Gr00tPolicy(BasePolicy):
             new_action_head = FlowmatchingActionHead(new_action_head_config)
 
             # Copy the weights from the old action head to the new one
-            loaded_count, skipped_count = _load_matching_state_dict(
-                module=new_action_head,
-                source_state_dict=model.action_head.state_dict(),
-            )
-            if skipped_count:
-                print(
-                    "Policy: partially restored action head weights after horizon change: "
-                    f"loaded={loaded_count}, skipped={skipped_count}"
-                )
+            new_action_head.load_state_dict(model.action_head.state_dict(), strict=False)
 
             # Replace the action head
             model.action_head = new_action_head

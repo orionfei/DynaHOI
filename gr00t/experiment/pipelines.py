@@ -214,67 +214,22 @@ def recreate_action_head_for_horizon(
     )
 
 
-def action_head_matches(
-    model: GR00T_N1_5,
-    action_dim: int,
-    action_horizon: int,
-) -> bool:
-    config = model.action_head.config
-    return (
-        model.action_dim == action_dim
-        and model.action_horizon == action_horizon
-        and config.action_dim == action_dim
-        and config.action_horizon == action_horizon
-        and config.max_action_dim == action_dim
-        and config.max_state_dim == action_dim
-    )
-
-
-def load_matching_state_dict(module: torch.nn.Module, source_state_dict: dict[str, torch.Tensor]) -> tuple[int, int]:
-    target_state_dict = module.state_dict()
-    compatible_state_dict = {
-        key: value
-        for key, value in source_state_dict.items()
-        if key in target_state_dict and target_state_dict[key].shape == value.shape
-    }
-    skipped_count = len(source_state_dict) - len(compatible_state_dict)
-    module.load_state_dict(compatible_state_dict, strict=False)
-    return len(compatible_state_dict), skipped_count
-
-
-def replace_action_head_preserve_weights(
+def replace_action_head_keep_dit(
     model: GR00T_N1_5,
     action_dim: int,
     action_horizon: int,
     tune_projector: bool,
     tune_diffusion_model: bool,
 ):
-    if action_head_matches(model, action_dim, action_horizon):
-        print(
-            "Keeping existing action head because action_dim/action_horizon "
-            f"already match ({action_dim}, {action_horizon})"
-        )
-        sync_action_head_config(model, action_dim, action_horizon)
-        model.action_head.set_trainable_parameters(
-            tune_projector=tune_projector,
-            tune_diffusion_model=tune_diffusion_model,
-        )
-        return
-
     new_action_head_config = model.action_head.config
     new_action_head_config.action_dim = action_dim
     new_action_head_config.action_horizon = action_horizon
     new_action_head_config.max_action_dim = action_dim
     new_action_head_config.max_state_dim = action_dim
 
-    old_state_dict = model.action_head.state_dict()
+    old_dit = model.action_head.model
     new_action_head = FlowmatchingActionHead(new_action_head_config)
-    loaded_count, skipped_count = load_matching_state_dict(new_action_head, old_state_dict)
-    if skipped_count:
-        print(
-            "Partially restored action head weights after shape/config change: "
-            f"loaded={loaded_count}, skipped={skipped_count}"
-        )
+    new_action_head.model = old_dit
     new_action_head.set_trainable_parameters(
         tune_projector=tune_projector,
         tune_diffusion_model=tune_diffusion_model,
@@ -783,7 +738,7 @@ def configure_our_model_for_train(config: Any, model: GR00T_N1_5, data_config: A
         tune_projector=config.tune_projector,
         tune_diffusion_model=config.tune_diffusion_model,
     )
-    replace_action_head_preserve_weights(
+    replace_action_head_keep_dit(
         model,
         action_dim=18,
         action_horizon=config.action_horizon,
@@ -800,7 +755,7 @@ def configure_baseline_model_for_train(config: Any, model: GR00T_N1_5, data_conf
         tune_projector=config.tune_projector,
         tune_diffusion_model=config.tune_diffusion_model,
     )
-    replace_action_head_preserve_weights(
+    replace_action_head_keep_dit(
         model,
         action_dim=config.action_dim,
         action_horizon=config.action_horizon,

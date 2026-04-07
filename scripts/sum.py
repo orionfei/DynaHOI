@@ -5,7 +5,7 @@ from typing import Tuple
 
 DEFAULT_FILE_PATH = (
     "/data1/yfl_data/DynaHOI/scripts/evaluation_results/"
-    "w5_h10.jsonl"
+    "w5_h10_4000steps.jsonl"
 )
 
 
