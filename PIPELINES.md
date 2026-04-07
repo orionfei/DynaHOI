@@ -18,10 +18,10 @@ The pipeline system is implemented in:
 
 There are currently 4 registered pipelines:
 
-1. `our_18d`
-2. `baseline_adjacent_window`
-3. `motion_hint_farneback`
-4. `baseline_adjacent_window_motion_hint_farneback`
+1. `baseline`
+2. `Local`
+3. `Global`
+4. `LoGo`
 
 They are all routed through the same unified CLI entrypoints:
 
@@ -63,10 +63,10 @@ All current hand pipelines use:
 
 The relevant data configs are:
 
-- `mano_18dim`
-- `mano_18dim_baseline`
-- `mano_18dim_motion_hint`
-- `mano_18dim_baseline_motion_hint`
+- `baseline`
+- `Local`
+- `Global`
+- `LoGo`
 
 ### Unified CLI parameters
 
@@ -104,7 +104,7 @@ The cache should be created before training or evaluation using:
 
 - [scripts/precompute_motion_hints.py](/data1/yfl_data/DynaHOI/scripts/precompute_motion_hints.py)
 
-## Pipeline 1: `our_18d`
+## Pipeline 1: `baseline`
 
 ### Purpose
 
@@ -112,7 +112,7 @@ This is the plain single-frame policy path. It does not use adjacent history win
 
 ### Canonical data config
 
-- `mano_18dim`
+- `baseline`
 
 ### Transform type
 
@@ -188,7 +188,7 @@ Use this pipeline when you want:
 - no precomputed motion prior
 - plain current-frame policy behavior
 
-## Pipeline 2: `baseline_adjacent_window`
+## Pipeline 2: `Local`
 
 ### Purpose
 
@@ -200,7 +200,7 @@ It prepends the adjacent `K` frames immediately before the current observation, 
 
 ### Canonical data config
 
-- `mano_18dim_baseline`
+- `Local`
 
 ### Transform type
 
@@ -298,7 +298,7 @@ Use this pipeline when you want:
 - short-term causal RGB history only
 - no precomputed long-term motion prior
 
-## Pipeline 3: `motion_hint_farneback`
+## Pipeline 3: `Global`
 
 ### Purpose
 
@@ -311,7 +311,7 @@ It does not use adjacent RGB history. Instead, it feeds:
 
 ### Canonical data config
 
-- `mano_18dim_motion_hint`
+- `Global`
 
 ### What the motion hint actually is
 
@@ -361,7 +361,7 @@ The prompt explicitly says:
 
 Note:
 
-- the code text says “first 20%”, but the real ratio is controlled by `motion_hint_ratio`
+- the code text says “first 20%�? but the real ratio is controlled by `motion_hint_ratio`
 - agents should treat the prompt wording as descriptive, and the actual source of truth as the CLI/config value
 
 ### Training dataset behavior
@@ -432,7 +432,7 @@ Use this pipeline when you want:
 - long-term global motion prior from the beginning of the trajectory
 - no short-term adjacent RGB window
 
-## Pipeline 4: `baseline_adjacent_window_motion_hint_farneback`
+## Pipeline 4: `LoGo`
 
 ### Purpose
 
@@ -446,7 +446,7 @@ It combines:
 
 ### Canonical data config
 
-- `mano_18dim_baseline_motion_hint`
+- `LoGo`
 
 ### Transform type
 
@@ -559,7 +559,7 @@ This is the richest hand pipeline currently registered.
 
 Pipeline-specific action-head configuration is controlled in [gr00t/experiment/pipelines.py](/data1/yfl_data/DynaHOI/gr00t/experiment/pipelines.py).
 
-### `our_18d`
+### `baseline`
 
 Uses:
 
@@ -571,25 +571,25 @@ This:
 2. replaces the action head while keeping the existing DiT
 3. forces `action_dim=18`
 
-### `baseline_adjacent_window`
+### `Local`
 
 Uses:
 
 - `configure_baseline_model_for_train(...)`
 
-This is similar to `our_18d` but allows `action_dim=config.action_dim`.
+This is similar to `baseline` but allows `action_dim=config.action_dim`.
 
 In practice, the hand setup is still 18-dimensional.
 
-### `motion_hint_farneback`
+### `Global`
 
 Uses:
 
 - `configure_our_model_for_train(...)`
 
-So it follows the same action-head handling as `our_18d`.
+So it follows the same action-head handling as `baseline`.
 
-### `baseline_adjacent_window_motion_hint_farneback`
+### `LoGo`
 
 Also uses:
 
@@ -610,7 +610,7 @@ There are two output-dir policies.
 
 Used by:
 
-- `baseline_adjacent_window`
+- `Local`
 
 Output path is used exactly as provided.
 
@@ -618,9 +618,9 @@ Output path is used exactly as provided.
 
 Used by:
 
-- `our_18d`
-- `motion_hint_farneback`
-- `baseline_adjacent_window_motion_hint_farneback`
+- `baseline`
+- `Global`
+- `LoGo`
 
 The actual directory becomes:
 
@@ -634,25 +634,25 @@ This is implemented by:
 
 Eval outputs are named per pipeline.
 
-### `our_18d`
+### `baseline`
 
 Result tag:
 
 - `<pipeline>:<dataset_tag>`
 
-### `baseline_adjacent_window`
+### `Local`
 
 Result tag:
 
 - `<pipeline>:window_<window_length>:<dataset_tag>`
 
-### `motion_hint_farneback`
+### `Global`
 
 Result tag:
 
 - `<pipeline>:<dataset_tag>`
 
-### `baseline_adjacent_window_motion_hint_farneback`
+### `LoGo`
 
 Result tag:
 
@@ -664,23 +664,23 @@ Use these pairings unless you have a concrete reason not to.
 
 ### Single-frame policy
 
-- `--pipeline our_18d`
-- `--data-config mano_18dim`
+- `--pipeline baseline`
+- `--data-config baseline`
 
 ### Adjacent RGB baseline
 
-- `--pipeline baseline_adjacent_window`
-- `--data-config mano_18dim_baseline`
+- `--pipeline Local`
+- `--data-config Local`
 
 ### Farneback motion-hint pipeline
 
-- `--pipeline motion_hint_farneback`
-- `--data-config mano_18dim_motion_hint`
+- `--pipeline Global`
+- `--data-config Global`
 
 ### Fused adjacent-window + motion-hint pipeline
 
-- `--pipeline baseline_adjacent_window_motion_hint_farneback`
-- `--data-config mano_18dim_baseline_motion_hint`
+- `--pipeline LoGo`
+- `--data-config LoGo`
 
 ## Recommended Commands
 
@@ -688,8 +688,8 @@ Use these pairings unless you have a concrete reason not to.
 
 ```bash
 python /data1/yfl_data/DynaHOI/scripts/finetune_policy.py \
-  --pipeline baseline_adjacent_window_motion_hint_farneback \
-  --data-config mano_18dim_baseline_motion_hint \
+  --pipeline LoGo \
+  --data-config LoGo \
   --base-model-path /data1/yfl_data/DynaHOI/gr00t/checkpoints/ObAct \
   --window-length 5 \
   --motion-hint-ratio 0.2 \
@@ -700,8 +700,8 @@ python /data1/yfl_data/DynaHOI/scripts/finetune_policy.py \
 
 ```bash
 python /data1/yfl_data/DynaHOI/scripts/eval_policy.py \
-  --pipeline baseline_adjacent_window_motion_hint_farneback \
-  --data-config mano_18dim_baseline_motion_hint \
+  --pipeline LoGo \
+  --data-config LoGo \
   --model-path /path/to/checkpoint \
   --window-length 5 \
   --motion-hint-ratio 0.2 \
@@ -742,15 +742,15 @@ Cause:
 
 Examples:
 
-- `baseline_adjacent_window` with `mano_18dim_motion_hint`
-- `motion_hint_farneback` with `mano_18dim_baseline`
+- `Local` with `Global`
+- `Global` with `Local`
 
 ### Invalid parameter family for a pipeline
 
 Cause:
 
-- setting `window_length` for `motion_hint_farneback`
-- setting motion-hint parameters for `baseline_adjacent_window`
+- setting `window_length` for `Global`
+- setting motion-hint parameters for `Local`
 
 Validation is intentionally strict and should not be bypassed.
 
@@ -772,3 +772,5 @@ If any of these are unclear, inspect:
 - [gr00t/model/transforms.py](/data1/yfl_data/DynaHOI/gr00t/model/transforms.py)
 
 Do not infer pipeline semantics from old scripts or old experiment names alone.
+
+

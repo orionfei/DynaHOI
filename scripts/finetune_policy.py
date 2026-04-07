@@ -22,11 +22,10 @@ from gr00t.model.gr00t_n1 import GR00T_N1_5
 from gr00t.utils.peft import get_lora_model
 
 os.environ["WANDB_PROJECT"] = "GR00T-N1.5-unity"
-os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3"
 
 @dataclass
 class TrainArgsConfig:
-    pipeline: str = "baseline_adjacent_window"
+    pipeline: str = "Local"
     """Registered train pipeline name."""
 
     dataset_path: List[str] = field(default_factory=lambda: ["/data1/yfl_data/Dyana_data/train"])
@@ -35,7 +34,7 @@ class TrainArgsConfig:
     output_dir: str = "/data1/yfl_data/DynaHOI/gr00t/checkpoints/adjacent_window/W3_H10"
     """Directory to save model checkpoints."""
 
-    data_config: Literal[tuple(DATA_CONFIG_MAP.keys())] = "mano_18dim_baseline"
+    data_config: Literal[tuple(DATA_CONFIG_MAP.keys())] = "Local"
     """Data configuration name from DATA_CONFIG_MAP."""
 
     batch_size: int = 8
@@ -123,10 +122,10 @@ class TrainArgsConfig:
     """Adjacent history frame count for pipelines that support it."""
 
     motion_hint_ratio: float = 0.25
-    """Prefix ratio used by the motion_hint_farneback pipeline."""
+    """Prefix ratio used by the Global pipeline."""
 
     motion_hint_num_frames: int = 6
-    """Uniformly sampled prefix frame count used by the motion_hint_farneback pipeline."""
+    """Uniformly sampled prefix frame count used by the Global pipeline."""
 
     balance_dataset_weights: bool = True
     """Used in LeRobotMixtureDataset."""

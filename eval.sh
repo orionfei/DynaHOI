@@ -3,11 +3,13 @@ set -e
 
 unset LD_LIBRARY_PATH
 
+export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-7}"
+
 PYTHON_BIN="${PYTHON_BIN:-python}"
 
 "$PYTHON_BIN" scripts/eval_policy.py \
-  --pipeline baseline_adjacent_window \
-  --data-config mano_18dim_baseline \
+  --pipeline Local \
+  --data-config Local \
   --action-horizon 10 \
   --window-length 5 \
   --trajs $(seq 0 199) \

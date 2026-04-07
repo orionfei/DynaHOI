@@ -285,7 +285,7 @@ def build_baseline_train_dataset(
 ) -> LeRobotSingleDataset:
     if len(config.dataset_path) != 1:
         raise ValueError(
-            f"baseline_adjacent_window expects exactly one dataset path, got {len(config.dataset_path)}."
+            f"Local expects exactly one dataset path, got {len(config.dataset_path)}."
         )
     return LeRobotSingleDataset(
         dataset_path=config.dataset_path[0],
@@ -376,7 +376,7 @@ def build_baseline_motion_hint_train_dataset(
 ) -> LeRobotSingleDataset:
     if len(config.dataset_path) != 1:
         raise ValueError(
-            "baseline_adjacent_window_motion_hint_farneback expects exactly one dataset path, "
+            "LoGo expects exactly one dataset path, "
             f"got {len(config.dataset_path)}."
         )
     return LeRobotSingleDataset(
@@ -623,10 +623,10 @@ def validate_our_train_args(config: Any):
     ensure_exact(config.action_dim, 18, "action_dim")
     ensure_positive(config.action_horizon, "action_horizon")
     if config.window_length != 0:
-        raise ValueError(f"window_length is unsupported for pipeline 'our_18d', got {config.window_length}.")
+        raise ValueError(f"window_length is unsupported for pipeline 'baseline', got {config.window_length}.")
     if config.motion_hint_ratio != 0.25 or config.motion_hint_num_frames != 6:
         raise ValueError(
-            "motion_hint_ratio and motion_hint_num_frames are unsupported for pipeline 'our_18d'."
+            "motion_hint_ratio and motion_hint_num_frames are unsupported for pipeline 'baseline'."
         )
 
 
@@ -636,7 +636,7 @@ def validate_baseline_train_args(config: Any):
     ensure_positive(config.window_length, "window_length")
     if config.motion_hint_ratio != 0.25 or config.motion_hint_num_frames != 6:
         raise ValueError(
-            "motion_hint_ratio and motion_hint_num_frames are unsupported for pipeline 'baseline_adjacent_window'."
+            "motion_hint_ratio and motion_hint_num_frames are unsupported for pipeline 'Local'."
         )
 
 
@@ -646,11 +646,11 @@ def validate_motion_hint_train_args(config: Any):
     ensure_positive(config.motion_hint_num_frames, "motion_hint_num_frames")
     if not (0.0 < config.motion_hint_ratio < 1.0):
         raise ValueError(
-            f"motion_hint_ratio must be in (0, 1) for pipeline 'motion_hint_farneback', got {config.motion_hint_ratio}."
+            f"motion_hint_ratio must be in (0, 1) for pipeline 'Global', got {config.motion_hint_ratio}."
         )
     if config.window_length != 0:
         raise ValueError(
-            f"window_length is unsupported for pipeline 'motion_hint_farneback', got {config.window_length}."
+            f"window_length is unsupported for pipeline 'Global', got {config.window_length}."
         )
 
 
@@ -662,19 +662,19 @@ def validate_baseline_motion_hint_train_args(config: Any):
     if not (0.0 < config.motion_hint_ratio < 1.0):
         raise ValueError(
             "motion_hint_ratio must be in (0, 1) for pipeline "
-            f"'baseline_adjacent_window_motion_hint_farneback', got {config.motion_hint_ratio}."
+            f"'LoGo', got {config.motion_hint_ratio}."
         )
 
 
 def validate_our_eval_args(args: Any):
     ensure_exact(args.action_dim, 18, "action_dim")
     if args.window_length != 0:
-        raise ValueError(f"window_length is unsupported for pipeline 'our_18d', got {args.window_length}.")
+        raise ValueError(f"window_length is unsupported for pipeline 'baseline', got {args.window_length}.")
     if args.action_horizon <= 0:
         raise ValueError(f"action_horizon must be positive, got {args.action_horizon}.")
     if args.motion_hint_ratio != 0.25 or args.motion_hint_num_frames != 6:
         raise ValueError(
-            "motion_hint_ratio and motion_hint_num_frames are unsupported for pipeline 'our_18d'."
+            "motion_hint_ratio and motion_hint_num_frames are unsupported for pipeline 'baseline'."
         )
 
 
@@ -684,7 +684,7 @@ def validate_baseline_eval_args(args: Any):
     ensure_positive(args.action_horizon, "action_horizon")
     if args.motion_hint_ratio != 0.25 or args.motion_hint_num_frames != 6:
         raise ValueError(
-            "motion_hint_ratio and motion_hint_num_frames are unsupported for pipeline 'baseline_adjacent_window'."
+            "motion_hint_ratio and motion_hint_num_frames are unsupported for pipeline 'Local'."
         )
 
 
@@ -694,11 +694,11 @@ def validate_motion_hint_eval_args(args: Any):
     ensure_positive(args.motion_hint_num_frames, "motion_hint_num_frames")
     if not (0.0 < args.motion_hint_ratio < 1.0):
         raise ValueError(
-            f"motion_hint_ratio must be in (0, 1) for pipeline 'motion_hint_farneback', got {args.motion_hint_ratio}."
+            f"motion_hint_ratio must be in (0, 1) for pipeline 'Global', got {args.motion_hint_ratio}."
         )
     if args.window_length != 0:
         raise ValueError(
-            f"window_length is unsupported for pipeline 'motion_hint_farneback', got {args.window_length}."
+            f"window_length is unsupported for pipeline 'Global', got {args.window_length}."
         )
 
 
@@ -710,7 +710,7 @@ def validate_baseline_motion_hint_eval_args(args: Any):
     if not (0.0 < args.motion_hint_ratio < 1.0):
         raise ValueError(
             "motion_hint_ratio must be in (0, 1) for pipeline "
-            f"'baseline_adjacent_window_motion_hint_farneback', got {args.motion_hint_ratio}."
+            f"'LoGo', got {args.motion_hint_ratio}."
         )
 
 
@@ -764,9 +764,9 @@ def configure_baseline_model_for_train(config: Any, model: GR00T_N1_5, data_conf
     )
 
 
-register_train_pipeline("our_18d")(
+register_train_pipeline("baseline")(
     TrainPipelineSpec(
-        name="our_18d",
+        name="baseline",
         validate_args=validate_our_train_args,
         configure_data_config=configure_our_train_data_config,
         configure_transform=no_op_transform,
@@ -776,9 +776,9 @@ register_train_pipeline("our_18d")(
     )
 )
 
-register_train_pipeline("baseline_adjacent_window")(
+register_train_pipeline("Local")(
     TrainPipelineSpec(
-        name="baseline_adjacent_window",
+        name="Local",
         validate_args=validate_baseline_train_args,
         configure_data_config=configure_baseline_train_data_config,
         configure_transform=lambda config, transform: set_baseline_window_length(
@@ -790,9 +790,9 @@ register_train_pipeline("baseline_adjacent_window")(
     )
 )
 
-register_train_pipeline("motion_hint_farneback")(
+register_train_pipeline("Global")(
     TrainPipelineSpec(
-        name="motion_hint_farneback",
+        name="Global",
         validate_args=validate_motion_hint_train_args,
         configure_data_config=configure_motion_hint_data_config,
         configure_transform=no_op_transform,
@@ -802,9 +802,9 @@ register_train_pipeline("motion_hint_farneback")(
     )
 )
 
-register_train_pipeline("baseline_adjacent_window_motion_hint_farneback")(
+register_train_pipeline("LoGo")(
     TrainPipelineSpec(
-        name="baseline_adjacent_window_motion_hint_farneback",
+        name="LoGo",
         validate_args=validate_baseline_motion_hint_train_args,
         configure_data_config=configure_motion_hint_data_config,
         configure_transform=lambda config, transform: set_baseline_window_length(
@@ -816,9 +816,9 @@ register_train_pipeline("baseline_adjacent_window_motion_hint_farneback")(
     )
 )
 
-register_eval_pipeline("our_18d")(
+register_eval_pipeline("baseline")(
     EvalPipelineSpec(
-        name="our_18d",
+        name="baseline",
         validate_args=validate_our_eval_args,
         configure_data_config=configure_our_train_data_config,
         configure_transform=no_op_transform,
@@ -828,9 +828,9 @@ register_eval_pipeline("our_18d")(
     )
 )
 
-register_eval_pipeline("baseline_adjacent_window")(
+register_eval_pipeline("Local")(
     EvalPipelineSpec(
-        name="baseline_adjacent_window",
+        name="Local",
         validate_args=validate_baseline_eval_args,
         configure_data_config=configure_baseline_eval_data_config,
         configure_transform=lambda args, transform: set_baseline_window_length(
@@ -851,9 +851,9 @@ register_eval_pipeline("baseline_adjacent_window")(
     )
 )
 
-register_eval_pipeline("motion_hint_farneback")(
+register_eval_pipeline("Global")(
     EvalPipelineSpec(
-        name="motion_hint_farneback",
+        name="Global",
         validate_args=validate_motion_hint_eval_args,
         configure_data_config=configure_motion_hint_data_config,
         configure_transform=no_op_transform,
@@ -863,9 +863,9 @@ register_eval_pipeline("motion_hint_farneback")(
     )
 )
 
-register_eval_pipeline("baseline_adjacent_window_motion_hint_farneback")(
+register_eval_pipeline("LoGo")(
     EvalPipelineSpec(
-        name="baseline_adjacent_window_motion_hint_farneback",
+        name="LoGo",
         validate_args=validate_baseline_motion_hint_eval_args,
         configure_data_config=configure_motion_hint_data_config,
         configure_transform=lambda args, transform: set_baseline_window_length(

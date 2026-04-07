@@ -1307,8 +1307,8 @@ DATA_CONFIG_MAP = {
     # "mano": ManoDataConfig(),
     # "mano_3dim":ManoDataConfig(),
 
-    "mano_18dim":ManoDataConfig2(),
-    "mano_18dim_baseline":ManoDataConfig2_baseline(),
-    "mano_18dim_motion_hint":ManoDataConfig2_motion_hint(),
-    "mano_18dim_baseline_motion_hint":ManoDataConfig2_baseline_motion_hint(),
+    "baseline":ManoDataConfig2(),
+    "Local":ManoDataConfig2_baseline(),
+    "Global":ManoDataConfig2_motion_hint(),
+    "LoGo":ManoDataConfig2_baseline_motion_hint(),
 }

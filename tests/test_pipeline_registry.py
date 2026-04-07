@@ -13,19 +13,19 @@ class PipelineRegistryTest(unittest.TestCase):
         self.assertEqual(
             sorted(TRAIN_PIPELINES),
             [
-                "baseline_adjacent_window",
-                "baseline_adjacent_window_motion_hint_farneback",
-                "motion_hint_farneback",
-                "our_18d",
+                "Global",
+                "LoGo",
+                "Local",
+                "baseline",
             ],
         )
         self.assertEqual(
             sorted(EVAL_PIPELINES),
             [
-                "baseline_adjacent_window",
-                "baseline_adjacent_window_motion_hint_farneback",
-                "motion_hint_farneback",
-                "our_18d",
+                "Global",
+                "LoGo",
+                "Local",
+                "baseline",
             ],
         )
 
