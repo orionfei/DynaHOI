@@ -623,7 +623,7 @@ class LeRobotSingleDataset(Dataset):
         if not manifest_path.exists():
             raise FileNotFoundError(
                 f"Motion hint cache manifest not found at {manifest_path}. "
-                "Run scripts/precompute_motion_hints.py before using pipeline 'motion_hint_farneback'."
+                "Run scripts/precompute_motion_hints.py before using pipeline 'Global'."
             )
 
         with open(manifest_path, "r") as f:

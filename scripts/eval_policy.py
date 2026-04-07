@@ -3,7 +3,6 @@ import json
 import os
 
 os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
-os.environ["CUDA_VISIBLE_DEVICES"] = "7"
 
 import asyncio
 import random
@@ -75,7 +74,7 @@ print(f"Using seed: {SEED}")
 
 @dataclass
 class EvalArgsConfig:
-    pipeline: str = "baseline_adjacent_window"
+    pipeline: str = "Local"
     """Registered eval pipeline name."""
 
     host: str = "localhost"
@@ -87,7 +86,7 @@ class EvalArgsConfig:
     modality_keys: List[str] = field(default_factory=lambda: ["left_hand"])
     """Modality keys to evaluate."""
 
-    data_config: Literal[tuple(DATA_CONFIG_MAP.keys())] = "mano_18dim_baseline"
+    data_config: Literal[tuple(DATA_CONFIG_MAP.keys())] = "Local"
     """Data config to use."""
 
     steps: int = 150
@@ -121,10 +120,10 @@ class EvalArgsConfig:
     """Adjacent history frame count for pipelines that support it."""
 
     motion_hint_ratio: float = 0.25
-    """Prefix ratio used by the motion_hint_farneback pipeline."""
+    """Prefix ratio used by the Global pipeline."""
 
     motion_hint_num_frames: int = 6
-    """Uniformly sampled prefix frame count used by the motion_hint_farneback pipeline."""
+    """Uniformly sampled prefix frame count used by the Global pipeline."""
 
     denoising_steps: int = 4
     """Number of denoising steps to use."""
