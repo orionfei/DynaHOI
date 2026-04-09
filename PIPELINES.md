@@ -90,7 +90,7 @@ In [scripts/eval_policy.py](/data1/yfl_data/DynaHOI/scripts/eval_policy.py), the
 
 Any pipeline with `use_motion_hint=True` requires a precomputed cache under:
 
-- `meta/motion_hint_farneback/ratio_xxx`
+- `meta/motion_hint_rgb_absdiff_stride5/ratio_xxx`
 
 This is validated in [gr00t/data/dataset.py](/data1/yfl_data/DynaHOI/gr00t/data/dataset.py).
 
@@ -98,7 +98,7 @@ If the cache is missing or inconsistent, dataset initialization fails explicitly
 
 The cache algorithm is expected to be:
 
-- `farneback_weighted_uv_magnitude_v1`
+- `rgb_absdiff_prefix_stride5_sum_v1`
 
 The cache should be created before training or evaluation using:
 
@@ -176,7 +176,6 @@ Must remain unset or default:
 
 - `window_length = 0`
 - `motion_hint_ratio = 0.25`
-- `motion_hint_num_frames = 6`
 
 If these are changed, validation fails.
 
@@ -265,7 +264,7 @@ Rollout start:
 
 This means:
 
-- no actions are produced before enough adjacent history exists
+- no actions are produced before enough history exists
 - first action chunk starts only after `window_length` past frames are available
 
 At each inference point:
@@ -288,7 +287,6 @@ Allowed:
 Unsupported:
 
 - changing `motion_hint_ratio`
-- changing `motion_hint_num_frames`
 
 For this pipeline, motion hint parameters are supposed to stay at defaults and are not used.
 
@@ -318,7 +316,7 @@ It does not use adjacent RGB history. Instead, it feeds:
 
 The motion hint is a precomputed RGB image stored on disk.
 
-It is derived from the first `motion_hint_ratio` portion of the trajectory using Farneback optical flow aggregation.
+It is derived from the first `motion_hint_ratio` portion of the trajectory using fixed-stride RGB frame differences.
 
 Key implementation:
 
@@ -326,13 +324,10 @@ Key implementation:
 
 High-level algorithm:
 
-1. convert prefix frames to grayscale
-2. compute Farneback optical flow between consecutive prefix frames
-3. aggregate all flow fields with increasing temporal weights
-4. encode:
-   - weighted horizontal flow into one channel
-   - weighted vertical flow into one channel
-   - magnitude into one channel
+1. sample prefix frames at indices `0, 5, 10, ...`
+2. compute RGB absolute differences between consecutive sampled frames
+3. sum all RGB difference maps over time
+4. normalize each channel independently to `uint8`
 
 This produces one RGB motion-hint image per episode.
 
@@ -357,7 +352,7 @@ This is assembled in:
 
 The prompt explicitly says:
 
-- first image is a precomputed motion hint from the first 20% of the trajectory
+- first image is a precomputed motion hint built from sampled prefix frames in the first part of the trajectory
 - second image is the current observation frame
 
 Note:
@@ -375,7 +370,6 @@ This sets:
 
 - `use_motion_hint=True`
 - `motion_hint_ratio=config.motion_hint_ratio`
-- `motion_hint_num_frames=config.motion_hint_num_frames`
 
 Dataset validity rule:
 
@@ -419,7 +413,6 @@ Allowed:
 
 - `action_dim = 18`
 - positive `action_horizon`
-- positive `motion_hint_num_frames`
 - `0 < motion_hint_ratio < 1`
 
 Unsupported:
@@ -441,8 +434,8 @@ This is the fused pipeline.
 
 It combines:
 
-- short-term adjacent RGB history
-- long-term precomputed Farneback motion hint
+- short-term RGB history
+- long-term precomputed RGB frame-difference motion hint
 - current frame
 
 ### Canonical data config
@@ -479,8 +472,8 @@ This is assembled in [gr00t/data/dataset.py](/data1/yfl_data/DynaHOI/gr00t/data/
 
 The fused prompt in [gr00t/model/transforms.py](/data1/yfl_data/DynaHOI/gr00t/model/transforms.py) says:
 
-- first `window_length` images are the adjacent frames immediately before the current observation
-- next image is a precomputed motion hint summarizing the moving object trajectory during the first part of the episode
+- first `window_length` images are history frames sampled from earlier timesteps before the current observation
+- next image is a precomputed motion hint built by accumulating RGB frame differences from sampled prefix frames in the first part of the episode
 - last image is the current frame
 
 This is the most important semantic contract for the fused pipeline.
@@ -523,7 +516,7 @@ Rollout start:
 
 This means the fused pipeline is causal in both senses:
 
-- it waits until enough local adjacent history exists
+- it waits until enough local history exists
 - it also waits until the prefix segment used by the motion hint has been fully observed
 
 At each inference point:
@@ -543,7 +536,6 @@ Allowed:
 - positive `action_horizon`
 - positive `window_length`
 - optional explicit `observe_frame_offsets` with the same length as `window_length`
-- positive `motion_hint_num_frames`
 - `0 < motion_hint_ratio < 1`
 
 Unlike the other specialized pipelines, this one requires both temporal parameter families at once.
@@ -660,8 +652,8 @@ Result tag:
 
 Result tag:
 
-- `<pipeline>:window_<window_length>:ratio_<motion_hint_ratio>:frames_<motion_hint_num_frames>:<dataset_tag>` for default contiguous history
-- `<pipeline>:offsets_<offsets>:ratio_<motion_hint_ratio>:frames_<motion_hint_num_frames>:<dataset_tag>` for explicit history offsets
+- `<pipeline>:window_<window_length>:ratio_<motion_hint_ratio>:<dataset_tag>` for default contiguous history
+- `<pipeline>:offsets_<offsets>:ratio_<motion_hint_ratio>:<dataset_tag>` for explicit history offsets
 
 ## Recommended Valid Pairings
 
@@ -697,8 +689,7 @@ python /data1/yfl_data/DynaHOI/scripts/finetune_policy.py \
   --data-config LoGo \
   --base-model-path /data1/yfl_data/DynaHOI/gr00t/checkpoints/ObAct \
   --window-length 5 \
-  --motion-hint-ratio 0.2 \
-  --motion-hint-num-frames 6
+  --motion-hint-ratio 0.2
 ```
 
 ### Evaluate fused pipeline
@@ -710,8 +701,7 @@ python /data1/yfl_data/DynaHOI/scripts/eval_policy.py \
   --model-path /path/to/checkpoint \
   --window-length 5 \
   --observe-frame-offsets 10 5 3 2 1 \
-  --motion-hint-ratio 0.2 \
-  --motion-hint-num-frames 6
+  --motion-hint-ratio 0.2
 ```
 
 ## Common Failure Modes
@@ -738,7 +728,7 @@ Common triggers:
 
 Cause:
 
-- missing manifest or image files in `meta/motion_hint_farneback`
+- missing manifest or image files in `meta/motion_hint_rgb_absdiff_stride5`
 
 ### Wrong data-config / pipeline pairing
 

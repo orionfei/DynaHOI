@@ -136,7 +136,7 @@ class GR00TTransform(InvertibleModalityTransform):
     )
     window_length: int = Field(
         default=5,
-        description="Number of adjacent history frames before the current frame in baseline mode.",
+        description="Number of history frames before the current frame in baseline mode.",
     )
 
     def set_metadata(self, dataset_metadata: DatasetMetadata):
@@ -313,7 +313,8 @@ class GR00TTransform(InvertibleModalityTransform):
             {
                 "type": "text",
                 "text": (
-                    "The first image is a precomputed motion hint from the first 25% of the trajectory. "
+                    "The first image is a precomputed motion hint built by accumulating RGB frame differences "
+                    "from sampled prefix frames in the first part of the trajectory. "
                     "The second image is the current observation frame.\nMotion hint:\n"
                 ),
             },
@@ -337,7 +338,7 @@ class GR00TTransform(InvertibleModalityTransform):
         if images.shape[1] != expected_frames:
             raise ValueError(
                 f"Baseline+motion-hint VLM expects {expected_frames} frames "
-                f"({self.window_length} adjacent history + 1 motion hint + 1 current), "
+                f"({self.window_length} history + 1 motion hint + 1 current), "
                 f"got {images.shape[1]}."
             )
 
@@ -351,9 +352,10 @@ class GR00TTransform(InvertibleModalityTransform):
         current_image = eagle_image_objs[self.window_length + 1]
         prompt_prefix = (
             f"The first {self.window_length} images are history frames sampled from earlier timesteps "
-            "before the current observation. The next image is a precomputed motion hint summarizing the moving "
-            "object trajectory during the first part of the episode. The last image is the current frame.\n"
-            "Adjacent history:\n"
+            "before the current observation. The next image is a precomputed motion hint built by accumulating "
+            "RGB frame differences from sampled prefix frames in the first part of the episode. "
+            "The last image is the current frame.\n"
+            "Observation history:\n"
         )
         return [
             {"type": "text", "text": prompt_prefix},

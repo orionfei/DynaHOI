@@ -125,9 +125,6 @@ class EvalArgsConfig:
     motion_hint_ratio: float = 0.25
     """Prefix ratio used by the Global pipeline."""
 
-    motion_hint_num_frames: int = 6
-    """Uniformly sampled prefix frame count used by the Global pipeline."""
-
     denoising_steps: int = 4
     """Number of denoising steps to use."""
 

@@ -359,7 +359,6 @@ def build_motion_hint_train_dataset(
             video_backend=config.video_backend,
             use_motion_hint=True,
             motion_hint_ratio=config.motion_hint_ratio,
-            motion_hint_num_frames=config.motion_hint_num_frames,
         )
 
     single_datasets = []
@@ -375,7 +374,6 @@ def build_motion_hint_train_dataset(
                 video_backend=config.video_backend,
                 use_motion_hint=True,
                 motion_hint_ratio=config.motion_hint_ratio,
-                motion_hint_num_frames=config.motion_hint_num_frames,
             )
         )
 
@@ -399,7 +397,6 @@ def build_motion_hint_eval_dataset(args: Any, modality_config: dict[str, Any]) -
         embodiment_tag=args.embodiment_tag,
         use_motion_hint=True,
         motion_hint_ratio=args.motion_hint_ratio,
-        motion_hint_num_frames=args.motion_hint_num_frames,
     )
 
 
@@ -426,7 +423,6 @@ def build_baseline_motion_hint_train_dataset(
         observe_frame_offsets=history.offsets,
         use_motion_hint=True,
         motion_hint_ratio=config.motion_hint_ratio,
-        motion_hint_num_frames=config.motion_hint_num_frames,
     )
 
 
@@ -444,7 +440,6 @@ def build_baseline_motion_hint_eval_dataset(args: Any, modality_config: dict[str
         observe_frame_offsets=history.offsets,
         use_motion_hint=True,
         motion_hint_ratio=args.motion_hint_ratio,
-        motion_hint_num_frames=args.motion_hint_num_frames,
     )
 
 
@@ -493,7 +488,7 @@ def build_baseline_motion_hint_eval_result_tag(args: Any) -> str:
     dataset_tag = _normalize_dataset_tag(args.dataset_path)
     return (
         f"{args.pipeline}:{format_history_result_tag(args)}:"
-        f"ratio_{args.motion_hint_ratio}:frames_{args.motion_hint_num_frames}:{dataset_tag}"
+        f"ratio_{args.motion_hint_ratio}:{dataset_tag}"
     )
 
 
@@ -665,9 +660,9 @@ def validate_our_train_args(config: Any):
         getattr(config, "observe_frame_offsets", None),
         "baseline",
     )
-    if config.motion_hint_ratio != 0.25 or config.motion_hint_num_frames != 6:
+    if config.motion_hint_ratio != 0.25:
         raise ValueError(
-            "motion_hint_ratio and motion_hint_num_frames are unsupported for pipeline 'baseline'."
+            "motion_hint_ratio is unsupported for pipeline 'baseline'."
         )
 
 
@@ -675,16 +670,15 @@ def validate_baseline_train_args(config: Any):
     ensure_positive(config.action_dim, "action_dim")
     ensure_positive(config.action_horizon, "action_horizon")
     resolve_history_config(config)
-    if config.motion_hint_ratio != 0.25 or config.motion_hint_num_frames != 6:
+    if config.motion_hint_ratio != 0.25:
         raise ValueError(
-            "motion_hint_ratio and motion_hint_num_frames are unsupported for pipeline 'Local'."
+            "motion_hint_ratio is unsupported for pipeline 'Local'."
         )
 
 
 def validate_motion_hint_train_args(config: Any):
     ensure_exact(config.action_dim, 18, "action_dim")
     ensure_positive(config.action_horizon, "action_horizon")
-    ensure_positive(config.motion_hint_num_frames, "motion_hint_num_frames")
     ensure_observe_frame_offsets_unsupported(
         getattr(config, "observe_frame_offsets", None),
         "Global",
@@ -703,7 +697,6 @@ def validate_baseline_motion_hint_train_args(config: Any):
     ensure_exact(config.action_dim, 18, "action_dim")
     ensure_positive(config.action_horizon, "action_horizon")
     resolve_history_config(config)
-    ensure_positive(config.motion_hint_num_frames, "motion_hint_num_frames")
     if not (0.0 < config.motion_hint_ratio < 1.0):
         raise ValueError(
             "motion_hint_ratio must be in (0, 1) for pipeline "
@@ -721,9 +714,9 @@ def validate_our_eval_args(args: Any):
         getattr(args, "observe_frame_offsets", None),
         "baseline",
     )
-    if args.motion_hint_ratio != 0.25 or args.motion_hint_num_frames != 6:
+    if args.motion_hint_ratio != 0.25:
         raise ValueError(
-            "motion_hint_ratio and motion_hint_num_frames are unsupported for pipeline 'baseline'."
+            "motion_hint_ratio is unsupported for pipeline 'baseline'."
         )
 
 
@@ -731,16 +724,15 @@ def validate_baseline_eval_args(args: Any):
     ensure_exact(args.action_dim, 18, "action_dim")
     resolve_history_config(args)
     ensure_positive(args.action_horizon, "action_horizon")
-    if args.motion_hint_ratio != 0.25 or args.motion_hint_num_frames != 6:
+    if args.motion_hint_ratio != 0.25:
         raise ValueError(
-            "motion_hint_ratio and motion_hint_num_frames are unsupported for pipeline 'Local'."
+            "motion_hint_ratio is unsupported for pipeline 'Local'."
         )
 
 
 def validate_motion_hint_eval_args(args: Any):
     ensure_exact(args.action_dim, 18, "action_dim")
     ensure_positive(args.action_horizon, "action_horizon")
-    ensure_positive(args.motion_hint_num_frames, "motion_hint_num_frames")
     ensure_observe_frame_offsets_unsupported(
         getattr(args, "observe_frame_offsets", None),
         "Global",
@@ -759,7 +751,6 @@ def validate_baseline_motion_hint_eval_args(args: Any):
     ensure_exact(args.action_dim, 18, "action_dim")
     ensure_positive(args.action_horizon, "action_horizon")
     resolve_history_config(args)
-    ensure_positive(args.motion_hint_num_frames, "motion_hint_num_frames")
     if not (0.0 < args.motion_hint_ratio < 1.0):
         raise ValueError(
             "motion_hint_ratio must be in (0, 1) for pipeline "

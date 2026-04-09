@@ -127,9 +127,6 @@ class TrainArgsConfig:
     motion_hint_ratio: float = 0.25
     """Prefix ratio used by the Global pipeline."""
 
-    motion_hint_num_frames: int = 6
-    """Uniformly sampled prefix frame count used by the Global pipeline."""
-
     balance_dataset_weights: bool = True
     """Used in LeRobotMixtureDataset."""
 
