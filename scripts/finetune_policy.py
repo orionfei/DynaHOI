@@ -121,6 +121,9 @@ class TrainArgsConfig:
     window_length: int = 3
     """Adjacent history frame count for pipelines that support it."""
 
+    observe_frame_offsets: List[int] | None = None
+    """Explicit history frame offsets for Local/LoGo, ordered from earliest to latest."""
+
     motion_hint_ratio: float = 0.25
     """Prefix ratio used by the Global pipeline."""
 

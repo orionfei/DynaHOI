@@ -22,3 +22,6 @@ setsid nohup torchrun --standalone --nproc_per_node=2 scripts/finetune_policy.py
   --no-tune-diffusion-model \
   --output-dir /data1/yfl_data/DynaHOI/gr00t/checkpoints/Local/w4_h8 \
   "$@" > nohup_logs/Local_w4_h8.log 2>&1 < /dev/null &
+
+# Example explicit offsets:
+# ./finetune.sh --observe-frame-offsets 10 5 3 2 1

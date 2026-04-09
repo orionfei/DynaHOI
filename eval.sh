@@ -15,3 +15,6 @@ PYTHON_BIN="${PYTHON_BIN:-python}"
   --trajs $(seq 0 199) \
   --model-path /data1/yfl_data/DynaHOI/gr00t/checkpoints/Local/w4_h8/checkpoint-8000 \
   "$@"
+
+# Example explicit offsets:
+# ./eval.sh --observe-frame-offsets 10 5 3 2 1

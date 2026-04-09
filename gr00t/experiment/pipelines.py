@@ -2,7 +2,7 @@ import csv
 import os
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Callable
+from typing import Any, Callable, Sequence
 
 import torch
 
@@ -17,6 +17,11 @@ from gr00t.utils.eval import (
     get_and_send_action_baseline,
     get_and_send_action_baseline_motion_hint,
     get_and_send_action_motion_hint,
+)
+from gr00t.utils.history import (
+    ObserveFrameHistoryConfig,
+    format_observe_frame_history_tag,
+    resolve_observe_frame_history,
 )
 
 
@@ -97,7 +102,35 @@ def ensure_exact(value: int, expected: int, name: str):
         raise ValueError(f"{name} must be {expected} for this pipeline, got {value}.")
 
 
-def set_baseline_window_length(transform: ComposedModalityTransform, window_length: int):
+def ensure_observe_frame_offsets_unsupported(
+    observe_frame_offsets: Sequence[int] | None,
+    pipeline_name: str,
+):
+    if observe_frame_offsets is not None:
+        raise ValueError(
+            f"observe_frame_offsets is unsupported for pipeline '{pipeline_name}', "
+            f"got {list(observe_frame_offsets)}."
+        )
+
+
+def resolve_history_config(args: Any) -> ObserveFrameHistoryConfig:
+    return resolve_observe_frame_history(
+        args.window_length,
+        getattr(args, "observe_frame_offsets", None),
+    )
+
+
+def format_history_result_tag(args: Any) -> str:
+    return format_observe_frame_history_tag(
+        args.window_length,
+        getattr(args, "observe_frame_offsets", None),
+    )
+
+
+def set_baseline_history_frame_count(
+    transform: ComposedModalityTransform,
+    history_frame_count: int,
+):
     gr00t_transforms = [t for t in transform.transforms if isinstance(t, GR00TTransform)]
     if len(gr00t_transforms) != 1:
         raise ValueError(f"Expected exactly one GR00TTransform, found {len(gr00t_transforms)}.")
@@ -108,8 +141,8 @@ def set_baseline_window_length(transform: ComposedModalityTransform, window_leng
             "Expected baseline-style GR00TTransform, got "
             f"{gr00t_transform.vlm_type}."
         )
-    ensure_positive(window_length, "window_length")
-    gr00t_transform.window_length = window_length
+    ensure_positive(history_frame_count, "history_frame_count")
+    gr00t_transform.window_length = history_frame_count
 
 
 def save_model_param_info(model: torch.nn.Module, save_path: str):
@@ -283,6 +316,7 @@ def build_baseline_train_dataset(
     modality_configs: dict[str, Any],
     transforms: ComposedModalityTransform,
 ) -> LeRobotSingleDataset:
+    history = resolve_history_config(config)
     if len(config.dataset_path) != 1:
         raise ValueError(
             f"Local expects exactly one dataset path, got {len(config.dataset_path)}."
@@ -294,7 +328,8 @@ def build_baseline_train_dataset(
         embodiment_tag=embodiment_tag,
         video_backend=config.video_backend,
         add_observe_frames=True,
-        observe_frame_num=config.window_length,
+        observe_frame_num=history.frame_count,
+        observe_frame_offsets=history.offsets,
     )
 
 
@@ -374,6 +409,7 @@ def build_baseline_motion_hint_train_dataset(
     modality_configs: dict[str, Any],
     transforms: ComposedModalityTransform,
 ) -> LeRobotSingleDataset:
+    history = resolve_history_config(config)
     if len(config.dataset_path) != 1:
         raise ValueError(
             "LoGo expects exactly one dataset path, "
@@ -386,7 +422,8 @@ def build_baseline_motion_hint_train_dataset(
         embodiment_tag=embodiment_tag,
         video_backend=config.video_backend,
         add_observe_frames=True,
-        observe_frame_num=config.window_length,
+        observe_frame_num=history.frame_count,
+        observe_frame_offsets=history.offsets,
         use_motion_hint=True,
         motion_hint_ratio=config.motion_hint_ratio,
         motion_hint_num_frames=config.motion_hint_num_frames,
@@ -394,6 +431,7 @@ def build_baseline_motion_hint_train_dataset(
 
 
 def build_baseline_motion_hint_eval_dataset(args: Any, modality_config: dict[str, Any]) -> LeRobotSingleDataset:
+    history = resolve_history_config(args)
     return LeRobotSingleDataset(
         dataset_path=args.dataset_path,
         modality_configs=modality_config,
@@ -402,7 +440,8 @@ def build_baseline_motion_hint_eval_dataset(args: Any, modality_config: dict[str
         transforms=None,
         embodiment_tag=args.embodiment_tag,
         add_observe_frames=True,
-        observe_frame_num=args.window_length,
+        observe_frame_num=history.frame_count,
+        observe_frame_offsets=history.offsets,
         use_motion_hint=True,
         motion_hint_ratio=args.motion_hint_ratio,
         motion_hint_num_frames=args.motion_hint_num_frames,
@@ -442,7 +481,7 @@ def build_our_eval_result_tag(args: Any) -> str:
 
 def build_baseline_eval_result_tag(args: Any) -> str:
     dataset_tag = _normalize_dataset_tag(args.dataset_path)
-    return f"{args.pipeline}:window_{args.window_length}:{dataset_tag}"
+    return f"{args.pipeline}:{format_history_result_tag(args)}:{dataset_tag}"
 
 
 def build_motion_hint_eval_result_tag(args: Any) -> str:
@@ -453,7 +492,7 @@ def build_motion_hint_eval_result_tag(args: Any) -> str:
 def build_baseline_motion_hint_eval_result_tag(args: Any) -> str:
     dataset_tag = _normalize_dataset_tag(args.dataset_path)
     return (
-        f"{args.pipeline}:window_{args.window_length}:"
+        f"{args.pipeline}:{format_history_result_tag(args)}:"
         f"ratio_{args.motion_hint_ratio}:frames_{args.motion_hint_num_frames}:{dataset_tag}"
     )
 
@@ -517,7 +556,6 @@ def run_baseline_eval_rollout(
                 action_horizon=args.action_horizon,
                 metrics_json_path=metrics_json_path,
                 traj_store_path=traj_store_path,
-                window_length=args.window_length,
             )
             if not completed:
                 continue
@@ -594,7 +632,6 @@ def run_baseline_motion_hint_eval_rollout(
                 action_horizon=args.action_horizon,
                 metrics_json_path=metrics_json_path,
                 traj_store_path=traj_store_path,
-                window_length=args.window_length,
             )
             if not completed:
                 continue
@@ -624,6 +661,10 @@ def validate_our_train_args(config: Any):
     ensure_positive(config.action_horizon, "action_horizon")
     if config.window_length != 0:
         raise ValueError(f"window_length is unsupported for pipeline 'baseline', got {config.window_length}.")
+    ensure_observe_frame_offsets_unsupported(
+        getattr(config, "observe_frame_offsets", None),
+        "baseline",
+    )
     if config.motion_hint_ratio != 0.25 or config.motion_hint_num_frames != 6:
         raise ValueError(
             "motion_hint_ratio and motion_hint_num_frames are unsupported for pipeline 'baseline'."
@@ -633,7 +674,7 @@ def validate_our_train_args(config: Any):
 def validate_baseline_train_args(config: Any):
     ensure_positive(config.action_dim, "action_dim")
     ensure_positive(config.action_horizon, "action_horizon")
-    ensure_positive(config.window_length, "window_length")
+    resolve_history_config(config)
     if config.motion_hint_ratio != 0.25 or config.motion_hint_num_frames != 6:
         raise ValueError(
             "motion_hint_ratio and motion_hint_num_frames are unsupported for pipeline 'Local'."
@@ -644,6 +685,10 @@ def validate_motion_hint_train_args(config: Any):
     ensure_exact(config.action_dim, 18, "action_dim")
     ensure_positive(config.action_horizon, "action_horizon")
     ensure_positive(config.motion_hint_num_frames, "motion_hint_num_frames")
+    ensure_observe_frame_offsets_unsupported(
+        getattr(config, "observe_frame_offsets", None),
+        "Global",
+    )
     if not (0.0 < config.motion_hint_ratio < 1.0):
         raise ValueError(
             f"motion_hint_ratio must be in (0, 1) for pipeline 'Global', got {config.motion_hint_ratio}."
@@ -657,7 +702,7 @@ def validate_motion_hint_train_args(config: Any):
 def validate_baseline_motion_hint_train_args(config: Any):
     ensure_exact(config.action_dim, 18, "action_dim")
     ensure_positive(config.action_horizon, "action_horizon")
-    ensure_positive(config.window_length, "window_length")
+    resolve_history_config(config)
     ensure_positive(config.motion_hint_num_frames, "motion_hint_num_frames")
     if not (0.0 < config.motion_hint_ratio < 1.0):
         raise ValueError(
@@ -672,6 +717,10 @@ def validate_our_eval_args(args: Any):
         raise ValueError(f"window_length is unsupported for pipeline 'baseline', got {args.window_length}.")
     if args.action_horizon <= 0:
         raise ValueError(f"action_horizon must be positive, got {args.action_horizon}.")
+    ensure_observe_frame_offsets_unsupported(
+        getattr(args, "observe_frame_offsets", None),
+        "baseline",
+    )
     if args.motion_hint_ratio != 0.25 or args.motion_hint_num_frames != 6:
         raise ValueError(
             "motion_hint_ratio and motion_hint_num_frames are unsupported for pipeline 'baseline'."
@@ -680,7 +729,7 @@ def validate_our_eval_args(args: Any):
 
 def validate_baseline_eval_args(args: Any):
     ensure_exact(args.action_dim, 18, "action_dim")
-    ensure_positive(args.window_length, "window_length")
+    resolve_history_config(args)
     ensure_positive(args.action_horizon, "action_horizon")
     if args.motion_hint_ratio != 0.25 or args.motion_hint_num_frames != 6:
         raise ValueError(
@@ -692,6 +741,10 @@ def validate_motion_hint_eval_args(args: Any):
     ensure_exact(args.action_dim, 18, "action_dim")
     ensure_positive(args.action_horizon, "action_horizon")
     ensure_positive(args.motion_hint_num_frames, "motion_hint_num_frames")
+    ensure_observe_frame_offsets_unsupported(
+        getattr(args, "observe_frame_offsets", None),
+        "Global",
+    )
     if not (0.0 < args.motion_hint_ratio < 1.0):
         raise ValueError(
             f"motion_hint_ratio must be in (0, 1) for pipeline 'Global', got {args.motion_hint_ratio}."
@@ -705,7 +758,7 @@ def validate_motion_hint_eval_args(args: Any):
 def validate_baseline_motion_hint_eval_args(args: Any):
     ensure_exact(args.action_dim, 18, "action_dim")
     ensure_positive(args.action_horizon, "action_horizon")
-    ensure_positive(args.window_length, "window_length")
+    resolve_history_config(args)
     ensure_positive(args.motion_hint_num_frames, "motion_hint_num_frames")
     if not (0.0 < args.motion_hint_ratio < 1.0):
         raise ValueError(
@@ -781,8 +834,8 @@ register_train_pipeline("Local")(
         name="Local",
         validate_args=validate_baseline_train_args,
         configure_data_config=configure_baseline_train_data_config,
-        configure_transform=lambda config, transform: set_baseline_window_length(
-            transform, config.window_length
+        configure_transform=lambda config, transform: set_baseline_history_frame_count(
+            transform, resolve_history_config(config).frame_count
         ),
         build_train_dataset=build_baseline_train_dataset,
         configure_model_for_train=configure_baseline_model_for_train,
@@ -807,8 +860,8 @@ register_train_pipeline("LoGo")(
         name="LoGo",
         validate_args=validate_baseline_motion_hint_train_args,
         configure_data_config=configure_motion_hint_data_config,
-        configure_transform=lambda config, transform: set_baseline_window_length(
-            transform, config.window_length
+        configure_transform=lambda config, transform: set_baseline_history_frame_count(
+            transform, resolve_history_config(config).frame_count
         ),
         build_train_dataset=build_baseline_motion_hint_train_dataset,
         configure_model_for_train=configure_our_model_for_train,
@@ -833,8 +886,8 @@ register_eval_pipeline("Local")(
         name="Local",
         validate_args=validate_baseline_eval_args,
         configure_data_config=configure_baseline_eval_data_config,
-        configure_transform=lambda args, transform: set_baseline_window_length(
-            transform, args.window_length
+        configure_transform=lambda args, transform: set_baseline_history_frame_count(
+            transform, resolve_history_config(args).frame_count
         ),
         build_eval_dataset=lambda args, modality_config: LeRobotSingleDataset(
             dataset_path=args.dataset_path,
@@ -844,7 +897,8 @@ register_eval_pipeline("Local")(
             transforms=None,
             embodiment_tag=args.embodiment_tag,
             add_observe_frames=True,
-            observe_frame_num=args.window_length,
+            observe_frame_num=resolve_history_config(args).frame_count,
+            observe_frame_offsets=resolve_history_config(args).offsets,
         ),
         run_eval_rollout=run_baseline_eval_rollout,
         build_result_tag=build_baseline_eval_result_tag,
@@ -868,8 +922,8 @@ register_eval_pipeline("LoGo")(
         name="LoGo",
         validate_args=validate_baseline_motion_hint_eval_args,
         configure_data_config=configure_motion_hint_data_config,
-        configure_transform=lambda args, transform: set_baseline_window_length(
-            transform, args.window_length
+        configure_transform=lambda args, transform: set_baseline_history_frame_count(
+            transform, resolve_history_config(args).frame_count
         ),
         build_eval_dataset=build_baseline_motion_hint_eval_dataset,
         run_eval_rollout=run_baseline_motion_hint_eval_rollout,

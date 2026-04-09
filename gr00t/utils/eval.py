@@ -370,17 +370,19 @@ def get_and_send_action_baseline(
     metrics_json_path: str = "/mnt/sdc/bch/forBenchmark/Isaac-GR00T/evaluation_results",
     traj_store_path: str = "",
     do_save_traj: bool = True,
-    window_length: int = 5,
 ):
-    print(f"The current used window_length is: {window_length}")
+    history_offsets = list(dataset.observe_frame_offsets)
+    history_frame_count = dataset.observe_frame_num
+    start_frame_idx = dataset.get_observe_frame_start_index()
+    print(f"The current used observe_frame_offsets are: {history_offsets}")
     if action_horizon <= 0:
         raise ValueError(f"action_horizon must be positive, got {action_horizon}.")
-    if window_length <= 0:
-        raise ValueError(f"window_length must be positive, got {window_length}.")
-    if steps <= window_length:
+    if history_frame_count <= 0:
+        raise ValueError(f"history_frame_count must be positive, got {history_frame_count}.")
+    if steps <= start_frame_idx:
         print(
             f"⚠️ Skipping traj_id={traj_id}, repeat={repeat_num}: "
-            f"trajectory length {steps} is not enough for {window_length} adjacent history frames."
+            f"trajectory length {steps} is not enough for history start index {start_frame_idx}."
         )
         return False
 
@@ -391,8 +393,6 @@ def get_and_send_action_baseline(
     gt_action_data = dataset.get_trajectory_data(traj_id)["action"].to_numpy()
     gt_action_data = np.array([frame.tolist() for frame in gt_action_data])[:,:3]
 
-    start_frame_idx = window_length
-    
     # Send start episode signal using synchronous version
     print(f"start_frame_idx / total_frames: {start_frame_idx} / {steps}")
     success = server.send_start_episode_sync(unity_meta["episode"], unity_meta["task_type"], repeat_num, steps , start_frame_idx * 3, action_horizon) # *3是因为unity端物体移动时60FPS，手移动时20FPS
@@ -436,9 +436,9 @@ def get_and_send_action_baseline(
                 [obs_sample_frames_uint8, ego_cur],
                 axis=0
             )
-            if ego_seq.shape[0] != window_length + 1:
+            if ego_seq.shape[0] != history_frame_count + 1:
                 raise ValueError(
-                    f"Expected {window_length + 1} baseline frames after concatenation, got {ego_seq.shape[0]}."
+                    f"Expected {history_frame_count + 1} baseline frames after concatenation, got {ego_seq.shape[0]}."
                 )
             obs["video.ego_view"] = ego_seq
 
@@ -635,15 +635,15 @@ def get_and_send_action_baseline_motion_hint(
     metrics_json_path: str = "/mnt/sdc/bch/forBenchmark/Isaac-GR00T/evaluation_results",
     traj_store_path: str = "",
     do_save_traj: bool = True,
-    window_length: int = 5,
 ):
     if action_horizon <= 0:
         raise ValueError(f"action_horizon must be positive, got {action_horizon}.")
-    if window_length <= 0:
-        raise ValueError(f"window_length must be positive, got {window_length}.")
+    history_frame_count = dataset.observe_frame_num
+    if history_frame_count <= 0:
+        raise ValueError(f"history_frame_count must be positive, got {history_frame_count}.")
 
     motion_hint_start_index = dataset.get_motion_hint_start_index(traj_id)
-    start_frame_idx = max(window_length, motion_hint_start_index)
+    start_frame_idx = max(dataset.get_observe_frame_start_index(), motion_hint_start_index)
     if steps <= start_frame_idx:
         print(
             f"⚠️ Skipping traj_id={traj_id}, repeat={repeat_num}: "
@@ -709,7 +709,7 @@ def get_and_send_action_baseline_motion_hint(
                 ],
                 axis=0,
             )
-            expected_frame_count = window_length + 2
+            expected_frame_count = history_frame_count + 2
             if ego_seq.shape[0] != expected_frame_count:
                 raise ValueError(
                     f"Expected {expected_frame_count} combined frames after concatenation, got {ego_seq.shape[0]}."

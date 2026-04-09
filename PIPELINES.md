@@ -194,9 +194,11 @@ Use this pipeline when you want:
 
 This is the short-term temporal RGB baseline.
 
-It prepends the adjacent `K` frames immediately before the current observation, where:
+It prepends `K` history frames before the current observation, where:
 
 - `K = window_length`
+- if `observe_frame_offsets` is omitted, those frames are the default contiguous window
+- if `observe_frame_offsets` is provided, those frames are sampled at the explicit offsets
 
 ### Canonical data config
 
@@ -212,11 +214,8 @@ Uses:
 
 At dataset time, the video tensor is assembled as:
 
-1. `prevK`
-2. `prevK-1`
-3. ...
-4. `prev1`
-5. `current`
+1. history frames in the configured offset order
+2. `current`
 
 This is done in [gr00t/data/dataset.py](/data1/yfl_data/DynaHOI/gr00t/data/dataset.py) through:
 
@@ -227,7 +226,7 @@ This is done in [gr00t/data/dataset.py](/data1/yfl_data/DynaHOI/gr00t/data/datas
 
 The baseline prompt in [gr00t/model/transforms.py](/data1/yfl_data/DynaHOI/gr00t/model/transforms.py) explicitly says:
 
-- the first `window_length` images are adjacent frames immediately before the current observation
+- the first `window_length` images are history frames sampled from earlier timesteps before the current observation
 - the last image is the current frame
 
 This is the correct interpretation of the baseline window.
@@ -242,10 +241,11 @@ This sets:
 
 - `add_observe_frames=True`
 - `observe_frame_num=window_length`
+- `observe_frame_offsets=observe_frame_offsets` when provided
 
 Dataset validity rule:
 
-- only steps with `base_index >= window_length` are included
+- only steps with `base_index >= max(history_offsets)` are included
 
 This filtering is done in:
 
@@ -261,7 +261,7 @@ Evaluation uses:
 
 Rollout start:
 
-- `start_frame_idx = window_length`
+- `start_frame_idx = max(history_offsets)`
 
 This means:
 
@@ -271,7 +271,7 @@ This means:
 At each inference point:
 
 1. Unity provides the current frame only
-2. Python fetches the previous `window_length` frames from the dataset video
+2. Python fetches the configured history frames from the dataset video
 3. those frames are resized to Unity frame resolution
 4. final sequence becomes `history + current`
 5. sequence is sent into the policy
@@ -283,6 +283,7 @@ Allowed:
 - positive `action_dim`
 - positive `action_horizon`
 - positive `window_length`
+- optional explicit `observe_frame_offsets` with the same length as `window_length`
 
 Unsupported:
 
@@ -467,7 +468,8 @@ The final image order is:
 
 More generally:
 
-- `window_length` adjacent history frames
+- `window_length` history frames
+- optional explicit `observe_frame_offsets` for the local history branch
 - then 1 motion hint image
 - then 1 current frame
 
@@ -498,12 +500,12 @@ Dataset validity rules:
 
 - the trajectory must have a valid motion-hint cache
 - the step index must satisfy both requirements:
-  - `base_index >= window_length`
+  - `base_index >= max(history_offsets)`
   - `base_index >= motion_hint_start_index`
 
 The actual start index is:
 
-- `max(window_length, motion_hint_start_index)`
+- `max(max(history_offsets), motion_hint_start_index)`
 
 This is enforced in:
 
@@ -517,7 +519,7 @@ Evaluation uses:
 
 Rollout start:
 
-- `start_frame_idx = max(window_length, motion_hint_start_index)`
+- `start_frame_idx = max(max(history_offsets), motion_hint_start_index)`
 
 This means the fused pipeline is causal in both senses:
 
@@ -527,7 +529,7 @@ This means the fused pipeline is causal in both senses:
 At each inference point:
 
 1. Unity provides the current frame
-2. Python fetches `window_length` adjacent previous frames
+2. Python fetches the configured local history frames
 3. Python loads the precomputed motion hint
 4. everything is resized to the current frame resolution
 5. final sequence becomes `history + motion_hint + current`
@@ -540,6 +542,7 @@ Allowed:
 - `action_dim = 18`
 - positive `action_horizon`
 - positive `window_length`
+- optional explicit `observe_frame_offsets` with the same length as `window_length`
 - positive `motion_hint_num_frames`
 - `0 < motion_hint_ratio < 1`
 
@@ -644,7 +647,8 @@ Result tag:
 
 Result tag:
 
-- `<pipeline>:window_<window_length>:<dataset_tag>`
+- `<pipeline>:window_<window_length>:<dataset_tag>` for default contiguous history
+- `<pipeline>:offsets_<offsets>:<dataset_tag>` for explicit history offsets
 
 ### `Global`
 
@@ -656,7 +660,8 @@ Result tag:
 
 Result tag:
 
-- `<pipeline>:window_<window_length>:ratio_<motion_hint_ratio>:frames_<motion_hint_num_frames>:<dataset_tag>`
+- `<pipeline>:window_<window_length>:ratio_<motion_hint_ratio>:frames_<motion_hint_num_frames>:<dataset_tag>` for default contiguous history
+- `<pipeline>:offsets_<offsets>:ratio_<motion_hint_ratio>:frames_<motion_hint_num_frames>:<dataset_tag>` for explicit history offsets
 
 ## Recommended Valid Pairings
 
@@ -704,6 +709,7 @@ python /data1/yfl_data/DynaHOI/scripts/eval_policy.py \
   --data-config LoGo \
   --model-path /path/to/checkpoint \
   --window-length 5 \
+  --observe-frame-offsets 10 5 3 2 1 \
   --motion-hint-ratio 0.2 \
   --motion-hint-num-frames 6
 ```

@@ -36,6 +36,7 @@ from pydantic import BaseModel, Field, ValidationError
 from torch.utils.data import Dataset
 from tqdm import tqdm
 
+from gr00t.utils.history import resolve_observe_frame_history
 from gr00t.utils.video import get_frames_by_timestamps, get_prefix_frame_count
 
 from .embodiment_tags import EmbodimentTag
@@ -223,6 +224,7 @@ class LeRobotSingleDataset(Dataset):
         transforms: ComposedModalityTransform | None = None,
         add_observe_frames: bool = False,
         observe_frame_num: int = 5,
+        observe_frame_offsets: Sequence[int] | None = None,
         use_motion_hint: bool = False,
         motion_hint_ratio: float = 0.25,
         motion_hint_num_frames: int = 6,
@@ -240,6 +242,7 @@ class LeRobotSingleDataset(Dataset):
             embodiment_tag (EmbodimentTag): Overload the embodiment tag for the dataset. e.g. define it as "new_embodiment"
             add_observe_frames (bool): Whether to prepend adjacent observation history frames for baseline training.
             observe_frame_num (int): Number of adjacent history frames to prepend before the current frame.
+            observe_frame_offsets (Sequence[int] | None): Explicit history frame offsets before the current frame.
         """
         # first check if the path directory exists
         if not Path(dataset_path).exists():
@@ -257,8 +260,20 @@ class LeRobotSingleDataset(Dataset):
         self.motion_hint_ratio = motion_hint_ratio
         self.motion_hint_num_frames = motion_hint_num_frames
         if self.add_observe_frames:
-            if self.observe_frame_num <= 0:
-                raise ValueError(f"observe_frame_num must be positive, got {self.observe_frame_num}.")
+            history_config = resolve_observe_frame_history(
+                observe_frame_num,
+                observe_frame_offsets,
+            )
+            self.observe_frame_num = history_config.frame_count
+            self.observe_frame_offsets = history_config.offsets
+            self.observe_frame_start_index = history_config.start_index
+        else:
+            if observe_frame_offsets is not None:
+                raise ValueError(
+                    "observe_frame_offsets is only supported when add_observe_frames=True."
+                )
+            self.observe_frame_offsets = ()
+            self.observe_frame_start_index = 0
         if self.use_motion_hint:
             if not (0.0 < self.motion_hint_ratio < 1.0):
                 raise ValueError(
@@ -535,7 +550,7 @@ class LeRobotSingleDataset(Dataset):
         for trajectory_id, trajectory_length in zip(self.trajectory_ids, self.trajectory_lengths):
             start_index = 0
             if self.add_observe_frames:
-                start_index = max(start_index, self.observe_frame_num)
+                start_index = max(start_index, self.observe_frame_start_index)
             if self.use_motion_hint:
                 if int(trajectory_id) not in self._valid_motion_hint_trajectory_ids:
                     continue
@@ -962,13 +977,19 @@ class LeRobotSingleDataset(Dataset):
         key: str,
         base_index: int,
     ) -> np.ndarray:
-        if base_index < self.observe_frame_num:
+        if not self.add_observe_frames:
+            raise ValueError("Adjacent observe frames are only available when add_observe_frames=True.")
+        if base_index < self.observe_frame_start_index:
             raise ValueError(
-                f"Adjacent-history baseline requires base_index >= {self.observe_frame_num}, got {base_index}."
+                "Adjacent-history baseline requires "
+                f"base_index >= {self.observe_frame_start_index}, got {base_index}."
             )
         traj_data = self.get_trajectory_data(trajectory_id)
         assert "timestamp" in traj_data.columns, f"No timestamp found in {trajectory_id=}"
-        history_indices = np.arange(base_index - self.observe_frame_num, base_index)
+        history_indices = np.array(
+            [base_index - offset for offset in self.observe_frame_offsets],
+            dtype=int,
+        )
         history_timestamps = traj_data["timestamp"].to_numpy()[history_indices]
         video_key = key.replace("video.", "")
         video_path = self.get_video_path(trajectory_id, video_key)
@@ -978,6 +999,11 @@ class LeRobotSingleDataset(Dataset):
             video_backend=self.video_backend,
             video_backend_kwargs=self.video_backend_kwargs,
         )
+
+    def get_observe_frame_start_index(self) -> int:
+        if not self.add_observe_frames:
+            raise ValueError("Observe frame start index is only available when add_observe_frames=True.")
+        return self.observe_frame_start_index
 
     def get_state_or_action(
         self,

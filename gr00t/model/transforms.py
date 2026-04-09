@@ -242,8 +242,8 @@ class GR00TTransform(InvertibleModalityTransform):
 
     def _build_baseline_conversation(self, eagle_image_objs: list[dict], lang: str) -> list[dict]:
         prompt_prefix = (
-            f"The first {self.window_length} images are the adjacent frames immediately before the "
-            "current observation. The last image is the current frame.\n"
+            f"The first {self.window_length} images are history frames sampled from earlier timesteps "
+            "before the current observation. The last image is the current frame.\n"
             "Observation history:\n"
         )
         return [
@@ -350,8 +350,8 @@ class GR00TTransform(InvertibleModalityTransform):
         motion_hint_image = eagle_image_objs[self.window_length]
         current_image = eagle_image_objs[self.window_length + 1]
         prompt_prefix = (
-            f"The first {self.window_length} images are the adjacent frames immediately before the "
-            "current observation. The next image is a precomputed motion hint summarizing the moving "
+            f"The first {self.window_length} images are history frames sampled from earlier timesteps "
+            "before the current observation. The next image is a precomputed motion hint summarizing the moving "
             "object trajectory during the first part of the episode. The last image is the current frame.\n"
             "Adjacent history:\n"
         )
