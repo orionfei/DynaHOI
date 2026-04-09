@@ -5,7 +5,7 @@ from typing import Tuple
 
 DEFAULT_FILE_PATH = (
     "/data1/yfl_data/DynaHOI/scripts/evaluation_results/"
-    "w5_h10_8000steps_lr1.0.jsonl"
+    "w8_h16.jsonl"
 )
 
 
@@ -65,6 +65,7 @@ def main():
     q_smooth_sum = 0.0
     q_line_sum = 0.0
     r_time_sum = 0.0
+    w_time_sum = 0.0
 
     with open(args.file_path, "r", encoding="utf-8") as f:
         for line_no, line in enumerate(f, start=1):
@@ -80,6 +81,7 @@ def main():
             q_smooth = float(require_field(data, "smoothness_var", line_no))
             q_line = float(require_field(data, "linearity", line_no))
             completion_raw = require_field(data, "successIndex / total_frames", line_no)
+            w_time = float(require_field(data, "waitTime", line_no))
 
             success_index, total_frames = parse_completion_ratio(completion_raw, line_no)
             r_time = 1.0 - (success_index / total_frames)
@@ -91,6 +93,7 @@ def main():
             q_smooth_sum += q_smooth
             q_line_sum += q_line
             r_time_sum += r_time
+            w_time_sum += w_time
 
     if total_count == 0:
         raise ValueError(f"No valid JSON lines found in {args.file_path}.")
@@ -101,6 +104,7 @@ def main():
     avg_q_smooth = q_smooth_sum / total_count
     avg_q_line = q_line_sum / total_count
     avg_r_time = r_time_sum / total_count
+    avg_w_time = w_time_sum / total_count
 
     print(f"file_path = {args.file_path}")
     print(f"total_count = {total_count}")
@@ -110,6 +114,7 @@ def main():
     print(f"avg_e_loc = {avg_e_loc:.6f}")
     print(f"avg_q_smooth = {avg_q_smooth:.6f}")
     print(f"avg_q_line = {avg_q_line:.6f}")
+    print(f"avg_w_time = {avg_w_time:.6f}")
     print(f"avg_r_time = {avg_r_time:.6f}")
 
 if __name__ == "__main__":
