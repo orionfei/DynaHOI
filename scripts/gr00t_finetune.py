@@ -30,6 +30,7 @@ from gr00t.experiment.data_config import DATA_CONFIG_MAP
 from gr00t.experiment.runner import TrainRunner
 from gr00t.model.gr00t_n1 import GR00T_N1_5
 from gr00t.model.transforms import EMBODIMENT_TAG_MAPPING
+from gr00t.experiment.pipelines import sync_action_head_loss_config
 from gr00t.utils.peft import get_lora_model
 
 
@@ -75,6 +76,12 @@ class ArgsConfig:
 
     tune_diffusion_model: bool = True
     """Whether to fine-tune the diffusion model."""
+
+    loss: Literal["original", "loc_weighted"] = "original"
+    """Training loss variant for the action head."""
+
+    loc_loss_weight: float = 3.0
+    """Weight applied to the first 3 action dims when loss=loc_weighted."""
 
     resume: bool = False
     """Whether to resume from a checkpoint."""
@@ -130,6 +137,9 @@ class ArgsConfig:
 
 def main(config: ArgsConfig):
     """Main training function."""
+    if config.loc_loss_weight <= 0:
+        raise ValueError(f"loc_loss_weight must be positive, got {config.loc_loss_weight}.")
+
     # ------------ step 1: load dataset ------------
     embodiment_tag = EmbodimentTag(config.embodiment_tag)
 
@@ -224,6 +234,8 @@ def main(config: ArgsConfig):
         model.action_head.set_trainable_parameters(
             tune_projector=config.tune_projector, tune_diffusion_model=config.tune_diffusion_model
         )
+
+    sync_action_head_loss_config(model, config.loss, config.loc_loss_weight)
 
     # Set the model's compute_dtype to bfloat16
     model.compute_dtype = "bfloat16"

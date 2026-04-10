@@ -220,6 +220,36 @@ def sync_action_head_config(model: GR00T_N1_5, action_dim: int, action_horizon: 
             )
 
 
+def sync_action_head_loss_config(model: GR00T_N1_5, loss: str, loc_loss_weight: float):
+    if loc_loss_weight <= 0:
+        raise ValueError(f"loc_loss_weight must be positive, got {loc_loss_weight}.")
+
+    model.action_head.config.loss = loss
+    model.action_head.config.loc_loss_weight = loc_loss_weight
+    model.config.action_head_cfg["loss"] = loss
+    model.config.action_head_cfg["loc_loss_weight"] = loc_loss_weight
+
+    if model.action_head.config.loss != loss:
+        raise ValueError(
+            f"Expected action_head.config.loss={loss!r}, got {model.action_head.config.loss!r}"
+        )
+    if model.action_head.config.loc_loss_weight != loc_loss_weight:
+        raise ValueError(
+            "Expected action_head.config.loc_loss_weight="
+            f"{loc_loss_weight}, got {model.action_head.config.loc_loss_weight}"
+        )
+    if model.config.action_head_cfg.get("loss") != loss:
+        raise ValueError(
+            f"Serialized action_head_cfg['loss'] is out of sync: expected {loss!r}, "
+            f"got {model.config.action_head_cfg.get('loss')!r}"
+        )
+    if model.config.action_head_cfg.get("loc_loss_weight") != loc_loss_weight:
+        raise ValueError(
+            "Serialized action_head_cfg['loc_loss_weight'] is out of sync: "
+            f"expected {loc_loss_weight}, got {model.config.action_head_cfg.get('loc_loss_weight')}"
+        )
+
+
 def recreate_action_head_for_horizon(
     model: GR00T_N1_5,
     action_horizon: int,

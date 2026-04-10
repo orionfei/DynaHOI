@@ -16,6 +16,7 @@ from gr00t.experiment.data_config import DATA_CONFIG_MAP
 from gr00t.experiment.pipelines import (
     get_train_pipeline,
     save_model_param_info,
+    sync_action_head_loss_config,
 )
 from gr00t.experiment.runner import TrainRunner
 from gr00t.model.gr00t_n1 import GR00T_N1_5
@@ -66,6 +67,12 @@ class TrainArgsConfig:
 
     action_dim: int = 18
     """Action/state dimension used by pipeline-specific action heads."""
+
+    loss: Literal["original", "loc_weighted"] = "original"
+    """Training loss variant for the action head."""
+
+    loc_loss_weight: float = 3.0
+    """Weight applied to the first 3 action dims when loss=loc_weighted."""
 
     base_model_path: str = "nvidia/GR00T-N1.5-3B"
     """Path or HuggingFace model ID for the base model."""
@@ -135,6 +142,9 @@ class TrainArgsConfig:
 
 
 def train_main(config: TrainArgsConfig):
+    if config.loc_loss_weight <= 0:
+        raise ValueError(f"loc_loss_weight must be positive, got {config.loc_loss_weight}.")
+
     pipeline = get_train_pipeline(config.pipeline)
     pipeline.validate_args(config)
     config.output_dir = pipeline.resolve_output_dir(config)
@@ -160,6 +170,7 @@ def train_main(config: TrainArgsConfig):
         tune_diffusion_model=config.tune_diffusion_model,
     )
     pipeline.configure_model_for_train(config, model, data_config)
+    sync_action_head_loss_config(model, config.loss, config.loc_loss_weight)
 
     model.compute_dtype = "bfloat16"
     model.config.compute_dtype = "bfloat16"

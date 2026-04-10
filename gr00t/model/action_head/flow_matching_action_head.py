@@ -155,6 +155,11 @@ class FlowmatchingActionHeadConfig(PretrainedConfig):
     num_target_vision_tokens: int = field(
         default=32, metadata={"help": "Number of target vision tokens."}
     )
+    loss: str = field(default="original", metadata={"help": "Training loss variant."})
+    loc_loss_weight: float = field(
+        default=3.0,
+        metadata={"help": "Elementwise weight applied to the first 3 action dims."},
+    )
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -165,6 +170,7 @@ class FlowmatchingActionHeadConfig(PretrainedConfig):
 class FlowmatchingActionHead(nn.Module):
     config_class = FlowmatchingActionHeadConfig
     supports_gradient_checkpointing = True
+    SUPPORTED_LOSSES = {"original", "loc_weighted"}
 
     def __init__(
         self,
@@ -218,7 +224,46 @@ class FlowmatchingActionHead(nn.Module):
         self.beta_dist = Beta(config.noise_beta_alpha, config.noise_beta_beta)
         self.num_timestep_buckets = config.num_timestep_buckets
         self.config = config
+        self._validate_loss_config()
         self.set_trainable_parameters(config.tune_projector, config.tune_diffusion_model)
+
+    def _validate_loss_config(self):
+        if self.config.loss not in self.SUPPORTED_LOSSES:
+            raise ValueError(
+                f"Unsupported loss {self.config.loss!r}. Supported losses: {sorted(self.SUPPORTED_LOSSES)}"
+            )
+        if self.config.loc_loss_weight <= 0:
+            raise ValueError(
+                f"loc_loss_weight must be positive, got {self.config.loc_loss_weight}."
+            )
+        if self.config.loss == "loc_weighted" and self.config.action_dim not in (None, 18):
+            raise ValueError(
+                "loc_weighted loss requires action_dim == 18, "
+                f"got {self.config.action_dim}."
+            )
+
+    def _compute_loss(
+        self,
+        pred_actions: torch.Tensor,
+        velocity: torch.Tensor,
+        action_mask: torch.Tensor,
+    ) -> torch.Tensor:
+        loss = F.mse_loss(pred_actions, velocity, reduction="none")
+        if self.config.loss == "loc_weighted":
+            if pred_actions.shape[-1] != 18:
+                raise ValueError(
+                    "loc_weighted loss requires action_dim == 18, "
+                    f"got {pred_actions.shape[-1]}."
+                )
+            loss_weights = torch.ones(
+                pred_actions.shape[-1],
+                device=pred_actions.device,
+                dtype=pred_actions.dtype,
+            )
+            loss_weights[:3] = self.config.loc_loss_weight
+            loss = loss * loss_weights.view(1, 1, -1)
+        loss = loss * action_mask
+        return loss.sum() / action_mask.sum()
 
     def set_seed(self, seed: int):
         self.seed = seed
@@ -364,8 +409,7 @@ class FlowmatchingActionHead(nn.Module):
 
         # Slice out only the action portion of pred and target.
         action_mask = action_input.action_mask
-        loss = F.mse_loss(pred_actions, velocity, reduction="none") * action_mask
-        loss = loss.sum() / action_mask.sum()
+        loss = self._compute_loss(pred_actions, velocity, action_mask)
         output_dict = {
             "loss": loss,
         }
