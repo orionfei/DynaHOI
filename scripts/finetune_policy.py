@@ -118,7 +118,7 @@ class TrainArgsConfig:
     video_backend: Literal["decord", "torchvision_av"] = "decord"
     """Video backend to use for training."""
 
-    window_length: int = 3
+    window_length: int = 0
     """Adjacent history frame count for pipelines that support it."""
 
     observe_frame_offsets: List[int] | None = None

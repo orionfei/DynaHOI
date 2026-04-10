@@ -116,7 +116,7 @@ class EvalArgsConfig:
     model_path: str | None = "/data1/yfl_data/DynaHOI/gr00t/checkpoints/adjacent_window/checkpoint-4000"
     """Path to the model checkpoint."""
 
-    window_length: int = 1
+    window_length: int = 0
     """Adjacent history frame count for pipelines that support it."""
 
     observe_frame_offsets: List[int] | None = None
