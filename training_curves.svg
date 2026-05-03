@@ -1,0 +1,97 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1074" height="758" viewBox="0 0 1074 758">
+<rect width="100%" height="100%" fill="#ffffff"/>
+<style>text{font-family:Arial,sans-serif;fill:#111827} .axis{stroke:#d1d5db;stroke-width:1} .grid{stroke:#eef2f7;stroke-width:1} .label{font-size:12px;fill:#4b5563} .title{font-size:15px;font-weight:700}</style>
+<text class="title" x="0" y="18">loss</text>
+<line class="grid" x1="54" y1="42.0" x2="500" y2="42.0"/>
+<line class="grid" x1="54" y1="80.5" x2="500" y2="80.5"/>
+<line class="grid" x1="54" y1="119.0" x2="500" y2="119.0"/>
+<line class="grid" x1="54" y1="157.5" x2="500" y2="157.5"/>
+<line class="grid" x1="54" y1="196.0" x2="500" y2="196.0"/>
+<line class="axis" x1="54" y1="196" x2="500" y2="196"/>
+<line class="axis" x1="54" y1="42" x2="54" y2="196"/>
+<text class="label" x="0" y="46">140</text>
+<text class="label" x="0" y="196">19.2</text>
+<text class="label" x="54" y="220">update 1</text>
+<text class="label" text-anchor="end" x="500" y="220">update 10</text>
+<line x1="380" y1="18" x2="398" y2="18" stroke="#2563eb" stroke-width="2.2"/>
+<text class="label" x="404" y="22">loss</text>
+<polyline fill="none" stroke="#2563eb" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round" points="54.0,119.4 103.6,115.6 153.1,157.9 202.7,52.6 252.2,163.9 301.8,123.8 351.3,185.4 400.9,140.6 450.4,160.4 500.0,144.1"/>
+<text class="title" x="554" y="18">value_loss</text>
+<line class="grid" x1="608" y1="42.0" x2="1054" y2="42.0"/>
+<line class="grid" x1="608" y1="80.5" x2="1054" y2="80.5"/>
+<line class="grid" x1="608" y1="119.0" x2="1054" y2="119.0"/>
+<line class="grid" x1="608" y1="157.5" x2="1054" y2="157.5"/>
+<line class="grid" x1="608" y1="196.0" x2="1054" y2="196.0"/>
+<line class="axis" x1="608" y1="196" x2="1054" y2="196"/>
+<line class="axis" x1="608" y1="42" x2="608" y2="196"/>
+<text class="label" x="554" y="46">280</text>
+<text class="label" x="554" y="196">37.4</text>
+<text class="label" x="608" y="220">update 1</text>
+<text class="label" text-anchor="end" x="1054" y="220">update 10</text>
+<line x1="934" y1="18" x2="952" y2="18" stroke="#7c3aed" stroke-width="2.2"/>
+<text class="label" x="958" y="22">value_loss</text>
+<polyline fill="none" stroke="#7c3aed" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round" points="608.0,119.1 657.6,115.2 707.1,157.6 756.7,52.6 806.2,163.6 855.8,123.5 905.3,185.4 954.9,140.5 1004.4,160.2 1054.0,143.9"/>
+<text class="title" x="0" y="282">policy_loss</text>
+<line class="grid" x1="54" y1="306.0" x2="500" y2="306.0"/>
+<line class="grid" x1="54" y1="344.5" x2="500" y2="344.5"/>
+<line class="grid" x1="54" y1="383.0" x2="500" y2="383.0"/>
+<line class="grid" x1="54" y1="421.5" x2="500" y2="421.5"/>
+<line class="grid" x1="54" y1="460.0" x2="500" y2="460.0"/>
+<line class="axis" x1="54" y1="460" x2="500" y2="460"/>
+<line class="axis" x1="54" y1="306" x2="54" y2="460"/>
+<text class="label" x="0" y="310">0.264</text>
+<text class="label" x="0" y="460">-0.21</text>
+<text class="label" x="54" y="484">update 1</text>
+<text class="label" text-anchor="end" x="500" y="484">update 10</text>
+<line x1="380" y1="282" x2="398" y2="282" stroke="#dc2626" stroke-width="2.2"/>
+<text class="label" x="404" y="286">policy_loss</text>
+<polyline fill="none" stroke="#dc2626" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round" points="54.0,414.6 103.6,449.4 153.1,394.5 202.7,389.4 252.2,418.7 301.8,411.7 351.3,316.6 400.9,382.5 450.4,387.1 500.0,409.1"/>
+<text class="title" x="554" y="282">reward / success</text>
+<line class="grid" x1="608" y1="306.0" x2="1054" y2="306.0"/>
+<line class="grid" x1="608" y1="344.5" x2="1054" y2="344.5"/>
+<line class="grid" x1="608" y1="383.0" x2="1054" y2="383.0"/>
+<line class="grid" x1="608" y1="421.5" x2="1054" y2="421.5"/>
+<line class="grid" x1="608" y1="460.0" x2="1054" y2="460.0"/>
+<line class="axis" x1="608" y1="460" x2="1054" y2="460"/>
+<line class="axis" x1="608" y1="306" x2="608" y2="460"/>
+<text class="label" x="554" y="310">2.67</text>
+<text class="label" x="554" y="460">-3.29</text>
+<text class="label" x="608" y="484">update 1</text>
+<text class="label" text-anchor="end" x="1054" y="484">update 10</text>
+<line x1="934" y1="282" x2="952" y2="282" stroke="#059669" stroke-width="2.2"/>
+<text class="label" x="958" y="286">reward_mean</text>
+<line x1="934" y1="298" x2="952" y2="298" stroke="#ea580c" stroke-width="2.2"/>
+<text class="label" x="958" y="302">success_rate</text>
+<polyline fill="none" stroke="#059669" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round" points="608.0,369.4 657.6,316.6 707.1,397.1 756.7,327.9 806.2,449.4 855.8,400.5 905.3,356.0 954.9,383.8 1004.4,424.0 1054.0,392.6"/>
+<polyline fill="none" stroke="#ea580c" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round" points="608.0,362.1 657.6,362.1 707.1,368.5 756.7,362.1 806.2,368.5 855.8,362.1 905.3,362.1 954.9,362.1 1004.4,368.5 1054.0,368.5"/>
+<text class="title" x="0" y="546">approx_kl</text>
+<line class="grid" x1="54" y1="570.0" x2="500" y2="570.0"/>
+<line class="grid" x1="54" y1="608.5" x2="500" y2="608.5"/>
+<line class="grid" x1="54" y1="647.0" x2="500" y2="647.0"/>
+<line class="grid" x1="54" y1="685.5" x2="500" y2="685.5"/>
+<line class="grid" x1="54" y1="724.0" x2="500" y2="724.0"/>
+<line class="axis" x1="54" y1="724" x2="500" y2="724"/>
+<line class="axis" x1="54" y1="570" x2="54" y2="724"/>
+<text class="label" x="0" y="574">0.331</text>
+<text class="label" x="0" y="724">-0.116</text>
+<text class="label" x="54" y="748">update 1</text>
+<text class="label" text-anchor="end" x="500" y="748">update 10</text>
+<line x1="380" y1="546" x2="398" y2="546" stroke="#0891b2" stroke-width="2.2"/>
+<text class="label" x="404" y="550">approx_kl</text>
+<polyline fill="none" stroke="#0891b2" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round" points="54.0,692.6 103.6,691.2 153.1,655.5 202.7,694.6 252.2,713.4 301.8,676.4 351.3,597.2 400.9,580.6 450.4,631.0 500.0,679.9"/>
+<text class="title" x="554" y="546">ratio_mean</text>
+<line class="grid" x1="608" y1="570.0" x2="1054" y2="570.0"/>
+<line class="grid" x1="608" y1="608.5" x2="1054" y2="608.5"/>
+<line class="grid" x1="608" y1="647.0" x2="1054" y2="647.0"/>
+<line class="grid" x1="608" y1="685.5" x2="1054" y2="685.5"/>
+<line class="grid" x1="608" y1="724.0" x2="1054" y2="724.0"/>
+<line class="axis" x1="608" y1="724" x2="1054" y2="724"/>
+<line class="axis" x1="608" y1="570" x2="608" y2="724"/>
+<text class="label" x="554" y="574">1.2</text>
+<text class="label" x="554" y="724">0.787</text>
+<text class="label" x="608" y="748">update 1</text>
+<text class="label" text-anchor="end" x="1054" y="748">update 10</text>
+<line x1="934" y1="546" x2="952" y2="546" stroke="#4b5563" stroke-width="2.2"/>
+<text class="label" x="958" y="550">ratio_mean</text>
+<polyline fill="none" stroke="#4b5563" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round" points="608.0,617.7 657.6,602.6 707.1,659.3 756.7,609.3 806.2,580.6 855.8,632.2 905.3,713.4 954.9,689.8 1004.4,686.7 1054.0,646.6"/>
+</svg>

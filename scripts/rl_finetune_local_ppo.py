@@ -1,11 +1,18 @@
 import asyncio
 import copy
+import html
 import json
+import math
+import os
 import random
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import List, Literal
+
+# Avoid CuBLAS deterministic-kernel errors if any imported GR00T component
+# enables PyTorch deterministic mode before inference.
+os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
 
 import cv2
 import numpy as np
@@ -87,7 +94,7 @@ class LocalPPOArgs:
     unity_trajectory_dir: str | None = None
     """Optional Unity PreProcessPoints directory used to preflight selected episodes."""
 
-    validate_unity_trajectories: bool = True
+    validate_unity_trajectories: bool = False
     """Check selected dataset trajectories exist in Unity PreProcessPoints before training."""
 
     server_host: str = "0.0.0.0"
@@ -168,6 +175,12 @@ class LocalPPOArgs:
     save_every_updates: int = 1
     """Save residual checkpoint every N updates."""
 
+    plot_training_curves: bool = True
+    """Write training_curves.svg after PPO updates. Also writes a PNG when matplotlib is installed."""
+
+    plot_every_updates: int = 1
+    """Refresh training curves every N updates. 0 disables periodic plotting."""
+
     resume_residual_checkpoint: str | None = None
     """Optional residual_policy.pt checkpoint to resume."""
 
@@ -245,6 +258,13 @@ def set_seed(seed: int):
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
+
+
+def disable_global_determinism():
+    torch.use_deterministic_algorithms(False)
+    if torch.cuda.is_available():
+        torch.backends.cudnn.deterministic = False
+        torch.backends.cudnn.benchmark = True
 
 
 def tensor_to_float(value: torch.Tensor) -> float:
@@ -621,6 +641,227 @@ def append_jsonl(path: Path, payload: dict):
         f.write(json.dumps(payload) + "\n")
 
 
+def read_jsonl(path: Path) -> list[dict]:
+    if not path.exists():
+        return []
+    rows = []
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                rows.append(json.loads(line))
+    return rows
+
+
+def _finite_float(value) -> float | None:
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(value):
+        return None
+    return value
+
+
+def _polyline_points(
+    updates: list[float],
+    values: list[float],
+    x_min: float,
+    x_max: float,
+    y_min: float,
+    y_max: float,
+    left: float,
+    top: float,
+    width: float,
+    height: float,
+) -> str:
+    if not updates or not values:
+        return ""
+    x_span = max(x_max - x_min, 1.0)
+    y_span = max(y_max - y_min, 1e-8)
+    points = []
+    for update, value in zip(updates, values):
+        x = left + (update - x_min) / x_span * width
+        y = top + height - (value - y_min) / y_span * height
+        points.append(f"{x:.1f},{y:.1f}")
+    return " ".join(points)
+
+
+def write_training_curves_svg(train_log_path: Path, output_dir: Path) -> Path | None:
+    rows = read_jsonl(train_log_path)
+    if not rows:
+        return None
+
+    panels = [
+        ("loss", ["loss"]),
+        ("value_loss", ["value_loss"]),
+        ("policy_loss", ["policy_loss"]),
+        ("reward / success", ["reward_mean", "success_rate"]),
+        ("approx_kl", ["approx_kl"]),
+        ("ratio_mean", ["ratio_mean"]),
+    ]
+    colors = {
+        "loss": "#2563eb",
+        "value_loss": "#7c3aed",
+        "policy_loss": "#dc2626",
+        "reward_mean": "#059669",
+        "success_rate": "#ea580c",
+        "approx_kl": "#0891b2",
+        "ratio_mean": "#4b5563",
+    }
+    updates = [_finite_float(row.get("update")) for row in rows]
+    valid_update_values = [value for value in updates if value is not None]
+    if not valid_update_values:
+        return None
+    x_min = min(valid_update_values)
+    x_max = max(valid_update_values)
+
+    panel_width = 520
+    panel_height = 230
+    margin_left = 54
+    margin_right = 20
+    margin_top = 42
+    margin_bottom = 34
+    gap_x = 34
+    gap_y = 34
+    cols = 2
+    rows_count = math.ceil(len(panels) / cols)
+    svg_width = cols * panel_width + (cols - 1) * gap_x
+    svg_height = rows_count * panel_height + (rows_count - 1) * gap_y
+
+    parts = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{svg_width}" height="{svg_height}" viewBox="0 0 {svg_width} {svg_height}">',
+        '<rect width="100%" height="100%" fill="#ffffff"/>',
+        '<style>text{font-family:Arial,sans-serif;fill:#111827} .axis{stroke:#d1d5db;stroke-width:1} .grid{stroke:#eef2f7;stroke-width:1} .label{font-size:12px;fill:#4b5563} .title{font-size:15px;font-weight:700}</style>',
+    ]
+
+    for idx, (title, keys) in enumerate(panels):
+        col = idx % cols
+        row_idx = idx // cols
+        panel_x = col * (panel_width + gap_x)
+        panel_y = row_idx * (panel_height + gap_y)
+        left = panel_x + margin_left
+        top = panel_y + margin_top
+        chart_width = panel_width - margin_left - margin_right
+        chart_height = panel_height - margin_top - margin_bottom
+
+        series = {}
+        all_values = []
+        for key in keys:
+            key_updates = []
+            key_values = []
+            for update, log_row in zip(updates, rows):
+                value = _finite_float(log_row.get(key))
+                if update is None or value is None:
+                    continue
+                key_updates.append(update)
+                key_values.append(value)
+                all_values.append(value)
+            series[key] = (key_updates, key_values)
+        if not all_values:
+            continue
+        y_min = min(all_values)
+        y_max = max(all_values)
+        if abs(y_max - y_min) < 1e-8:
+            y_min -= 1.0
+            y_max += 1.0
+        else:
+            pad = 0.08 * (y_max - y_min)
+            y_min -= pad
+            y_max += pad
+
+        title_text = html.escape(title)
+        parts.append(f'<text class="title" x="{panel_x}" y="{panel_y + 18}">{title_text}</text>')
+        for frac in (0.0, 0.25, 0.5, 0.75, 1.0):
+            y = top + chart_height * frac
+            parts.append(f'<line class="grid" x1="{left}" y1="{y:.1f}" x2="{left + chart_width}" y2="{y:.1f}"/>')
+        parts.append(f'<line class="axis" x1="{left}" y1="{top + chart_height}" x2="{left + chart_width}" y2="{top + chart_height}"/>')
+        parts.append(f'<line class="axis" x1="{left}" y1="{top}" x2="{left}" y2="{top + chart_height}"/>')
+        parts.append(f'<text class="label" x="{panel_x}" y="{top + 4}">{y_max:.3g}</text>')
+        parts.append(f'<text class="label" x="{panel_x}" y="{top + chart_height}">{y_min:.3g}</text>')
+        parts.append(f'<text class="label" x="{left}" y="{top + chart_height + 24}">update {x_min:.0f}</text>')
+        parts.append(f'<text class="label" text-anchor="end" x="{left + chart_width}" y="{top + chart_height + 24}">update {x_max:.0f}</text>')
+
+        legend_x = panel_x + panel_width - margin_right - 120
+        legend_y = panel_y + 18
+        for legend_idx, key in enumerate(keys):
+            color = colors.get(key, "#111827")
+            y = legend_y + legend_idx * 16
+            parts.append(f'<line x1="{legend_x}" y1="{y}" x2="{legend_x + 18}" y2="{y}" stroke="{color}" stroke-width="2.2"/>')
+            parts.append(f'<text class="label" x="{legend_x + 24}" y="{y + 4}">{html.escape(key)}</text>')
+
+        for key, (key_updates, key_values) in series.items():
+            points = _polyline_points(
+                key_updates,
+                key_values,
+                x_min,
+                x_max,
+                y_min,
+                y_max,
+                left,
+                top,
+                chart_width,
+                chart_height,
+            )
+            if points:
+                color = colors.get(key, "#111827")
+                parts.append(
+                    f'<polyline fill="none" stroke="{color}" stroke-width="2.2" '
+                    f'stroke-linejoin="round" stroke-linecap="round" points="{points}"/>'
+                )
+
+    parts.append("</svg>")
+    svg_path = output_dir / "training_curves.svg"
+    svg_path.write_text("\n".join(parts), encoding="utf-8")
+    return svg_path
+
+
+def write_training_curves_png_if_available(train_log_path: Path, output_dir: Path) -> Path | None:
+    rows = read_jsonl(train_log_path)
+    if not rows:
+        return None
+    try:
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except Exception as exc:
+        print(f"matplotlib not available; skipped PNG training curves: {exc}")
+        return None
+
+    updates = [row["update"] for row in rows]
+    panels = [
+        ("loss", ["loss"]),
+        ("value_loss", ["value_loss"]),
+        ("policy_loss", ["policy_loss"]),
+        ("reward / success", ["reward_mean", "success_rate"]),
+        ("approx_kl", ["approx_kl"]),
+        ("ratio_mean", ["ratio_mean"]),
+    ]
+    fig, axes = plt.subplots(3, 2, figsize=(12, 10), constrained_layout=True)
+    for ax, (title, keys) in zip(axes.flatten(), panels):
+        for key in keys:
+            values = [row.get(key) for row in rows]
+            ax.plot(updates, values, marker="o", linewidth=1.8, label=key)
+        ax.set_title(title)
+        ax.set_xlabel("update")
+        ax.grid(True, alpha=0.25)
+        ax.legend()
+    png_path = output_dir / "training_curves.png"
+    fig.savefig(png_path, dpi=150)
+    plt.close(fig)
+    return png_path
+
+
+def write_training_curves(train_log_path: Path, output_dir: Path):
+    svg_path = write_training_curves_svg(train_log_path, output_dir)
+    png_path = write_training_curves_png_if_available(train_log_path, output_dir)
+    if svg_path:
+        print(f"Wrote training curves: {svg_path}")
+    if png_path:
+        print(f"Wrote PNG training curves: {png_path}")
+
+
 def save_checkpoint(
     output_dir: Path,
     update_idx: int,
@@ -754,8 +995,10 @@ def build_policy_and_dataset(args: LocalPPOArgs, device: torch.device):
         sft_policy.model.eval()
         for param in sft_policy.model.parameters():
             param.requires_grad_(False)
-        if hasattr(sft_policy.model.action_head, "set_seed"):
-            sft_policy.model.action_head.set_seed(args.seed)
+        if hasattr(sft_policy.model.action_head, "seed"):
+            sft_policy.model.action_head.seed = args.seed
+        if hasattr(sft_policy.model.action_head, "deterministic"):
+            sft_policy.model.action_head.deterministic = False
 
     dataset: LeRobotSingleDataset = pipeline.build_eval_dataset(args, sft_policy.get_modality_config())
     if len(dataset) == 0:
@@ -777,6 +1020,7 @@ def train_main(args: LocalPPOArgs):
         raise ValueError("ppo_epochs must be positive.")
 
     set_seed(args.seed)
+    disable_global_determinism()
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     with open(output_dir / "run_config.json", "w", encoding="utf-8") as f:
@@ -874,6 +1118,12 @@ def train_main(args: LocalPPOArgs):
             }
             append_jsonl(train_log_path, train_payload)
             print(f"PPO update {update_idx} metrics: {train_payload}")
+            if (
+                args.plot_training_curves
+                and args.plot_every_updates > 0
+                and update_idx % args.plot_every_updates == 0
+            ):
+                write_training_curves(train_log_path, output_dir)
 
             if args.save_every_updates > 0 and update_idx % args.save_every_updates == 0:
                 save_checkpoint(output_dir, update_idx, residual_policy, optimizer, args)

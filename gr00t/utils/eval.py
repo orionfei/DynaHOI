@@ -306,7 +306,10 @@ def get_and_send_action(
             obs["annotation.human.action.task_description"] = [task_dict[unity_meta["task_type"]]]
 
             # === 3. Inference & collect predicted actions ===
-            action_chunk = policy.get_action(obs)
+            if hasattr(policy, "get_action_with_context"):
+                action_chunk = policy.get_action_with_context(obs, step_count=step_count, steps=steps)
+            else:
+                action_chunk = policy.get_action(obs)
             print(f"✅ Inference successful, current step: {step_count} / {steps}")
             action_chunk = action_chunk["action.left_hand"][:, :18] 
  
@@ -453,7 +456,10 @@ def get_and_send_action_baseline(
                     raise AttributeError("Dataset enables motion vectors but does not implement get_motion_map.")
                 obs["video.motion_map"] = dataset.get_motion_map(traj_id, step_count)
             # === 3. Inference & collect predicted actions ===
-            action_chunk = policy.get_action(obs)
+            if hasattr(policy, "get_action_with_context"):
+                action_chunk = policy.get_action_with_context(obs, step_count=step_count, steps=steps)
+            else:
+                action_chunk = policy.get_action(obs)
             print(f"✅ Inference successful, current step: {step_count} / {steps}")
 
             action_chunk = action_chunk["action.left_hand"][:, :18]
@@ -577,7 +583,10 @@ def get_and_send_action_motion_hint(
             obs["video.ego_view"] = ego_seq
             obs["annotation.human.action.task_description"] = [task_dict[unity_meta["task_type"]]]
 
-            action_chunk = policy.get_action(obs)
+            if hasattr(policy, "get_action_with_context"):
+                action_chunk = policy.get_action_with_context(obs, step_count=step_count, steps=steps)
+            else:
+                action_chunk = policy.get_action(obs)
             print(f"✅ Inference successful, current step: {step_count} / {steps}")
             action_chunk = action_chunk["action.left_hand"][:, :18]
             if step_count + action_horizon > steps:
@@ -717,7 +726,10 @@ def get_and_send_action_baseline_motion_hint(
             obs["video.ego_view"] = ego_seq
             obs["annotation.human.action.task_description"] = [task_dict[unity_meta["task_type"]]]
 
-            action_chunk = policy.get_action(obs)
+            if hasattr(policy, "get_action_with_context"):
+                action_chunk = policy.get_action_with_context(obs, step_count=step_count, steps=steps)
+            else:
+                action_chunk = policy.get_action(obs)
             print(f"✅ Inference successful, current step: {step_count} / {steps}")
             action_chunk = action_chunk["action.left_hand"][:, :18]
             if step_count + action_horizon > steps:
