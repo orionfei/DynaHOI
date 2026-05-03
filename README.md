@@ -1,174 +1,772 @@
-<h1 align="center">DynaHOI: Benchmarking Hand-Object Interaction for Dynamic Target</h1>
+# Pipeline Guide For AI Agents
 
-<div align='center'>
-    <a href='https://scholar.google.com/citations?user=VBb03aoAAAAJ' target='_blank'><strong>BoCheng Hu</strong></a><sup> 1</sup>,&thinsp;
-    <a href='https://scholar.google.com/citations?user=tGTa-EAAAAAJ' target='_blank'><strong>Zhonghan Zhao</strong></a><sup> 1,2</sup>,&thinsp;
-    <a href='https://scholar.google.com/citations?user=tS287loAAAAJ' target='_blank'><strong>Kaiyue Zhou</strong></a><sup> 3</sup>,&thinsp;
-    <a href='https://scholar.google.com/citations?user=lFbTT5AAAAAJ' target='_blank'><strong>Hongwei Wang</strong></a><sup> 1</sup>&thinsp;
-    <a href='https://scholar.google.com/citations?user=GhsXNiwAAAAJ' target='_blank'><strong>Gaoang Wang</strong></a><sup> 1</sup>&thinsp;
-</div>
+This document is the authoritative guide to the registered training and evaluation pipelines in this repository.
 
-<div align='center'>
-    <sup>1 </sup>Zhejiang University&ensp;  <sup>2 </sup>Shanghai AI Lab&ensp;  <sup>3 </sup>Chengdu Minto Technology Co., Ltd.&ensp; 
-</div>
+If you are an AI agent operating on this codebase, read this file before changing any training or evaluation command, dataset logic, or prompt logic.
 
-<div align="center">
+The pipeline system is implemented in:
 
+- [gr00t/experiment/pipelines.py](/data1/yfl_data/DynaHOI/gr00t/experiment/pipelines.py)
+- [gr00t/experiment/data_config.py](/data1/yfl_data/DynaHOI/gr00t/experiment/data_config.py)
+- [gr00t/data/dataset.py](/data1/yfl_data/DynaHOI/gr00t/data/dataset.py)
+- [gr00t/model/transforms.py](/data1/yfl_data/DynaHOI/gr00t/model/transforms.py)
+- [gr00t/utils/eval.py](/data1/yfl_data/DynaHOI/gr00t/utils/eval.py)
+- [scripts/finetune_policy.py](/data1/yfl_data/DynaHOI/scripts/finetune_policy.py)
+- [scripts/eval_policy.py](/data1/yfl_data/DynaHOI/scripts/eval_policy.py)
 
-[![arXiv](https://img.shields.io/badge/arXiv-2602.11919-b31b1b.svg)](https://arxiv.org/abs/2602.11919)
-[![Dataset](https://img.shields.io/badge/ModelScope-Dataset-624AFF?logo=modelscope)](https://modelscope.cn/datasets/brandonHuu/DynaHOI-12M)
-[![License](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
+## Overview
 
-</div>
+There are currently 4 registered pipelines:
 
-## **News 📣**
+1. `baseline`
+2. `Local`
+3. `Global`
+4. `LoGo`
 
-- ✅ We’ve released the **current evaluation / inference code** used in our experiments.
-- **Feb 13, 2026**: 🔥 We open-sourced **ObAct weights**.
-- **Feb 11, 2026**: 📄 Our paper is now public.
+They are all routed through the same unified CLI entrypoints:
 
+- training: [scripts/finetune_policy.py](/data1/yfl_data/DynaHOI/scripts/finetune_policy.py)
+- evaluation: [scripts/eval_policy.py](/data1/yfl_data/DynaHOI/scripts/eval_policy.py)
 
+The pipeline name selects:
 
+- argument validation
+- dataset construction
+- VLM prompt structure
+- rollout behavior during Unity evaluation
+- result tag naming
 
-## **TODO ✅**
+## Global Rules
 
-- [x] Paper release
-- [x] Model weights release (ObAct)
-- [ ] Dataset release
-- [ ] Training code release
-- [ ] Release dynamic HOI trajectory collection scripts & tutorial
+These rules apply to all pipelines unless explicitly stated otherwise.
 
+### Model loading
 
+Training always loads the model through:
 
-## **Setup ⚙️**
+- [GR00T_N1_5.from_pretrained(...)](/data1/yfl_data/DynaHOI/scripts/finetune_policy.py)
 
-### **1) Unity Environment (Simulator) 🎮**
+The pipeline does not change model class selection. It only changes:
 
-This project uses a **Unity simulator** for two purposes:
+- dataset assembly
+- transform behavior
+- action head horizon/dimension configuration
 
-- **Dynamic HOI trajectory collection**
-- **Online (closed-loop) evaluation** with a policy running in Python
+### State and action space
 
-**Steps**
+All current hand pipelines use:
 
-1. Install **Unity Hub**, then install Unity **2022.3.58f1c1**.
-2. Download the full Unity project (C# source + required assets) from [Google Drive](https://drive.google.com/drive/folders/10BlLxE14uEevkgVLK8Px3C7oMZAoaqAs?usp=sharing), Unity Controller folder. 
-3. Open the project in Unity Hub, then double-click the `Scenes/Dynamic` scene file to load the predefined scene in the Unity Editor.
-That’s it — your simulator should be ready ✅
+- `action_dim = 18`
+- single video key: `video.ego_view`
+- single state key: `state.left_hand`
+- single action key: `action.left_hand`
 
-------
+The relevant data configs are:
 
-### **2) Python Environment (Conda) 🐍**
+- `baseline`
+- `Local`
+- `Global`
+- `LoGo`
 
-```
-conda create -n gr00t python=3.10
-conda activate gr00t
-pip install --upgrade setuptools
-pip install -e .[base]
-pip install --no-build-isolation flash-attn==2.7.1.post4
-```
+### Unified CLI parameters
 
-> We also recommend using **uv** for faster & cleaner dependency management.
-> You can follow NVIDIA’s official setup guide [here](https://github.com/NVIDIA/Isaac-GR00T?tab=readme-ov-file#set-up-the-environment).
+The main user-facing pipeline switches are:
 
+- `--pipeline`
+- `--data-config`
+- `--window-length`
+- `--motion-hint-ratio`
+- `--motion-hint-num-frames`
 
+Not every pipeline supports every parameter. Unsupported combinations are rejected explicitly in [gr00t/experiment/pipelines.py](/data1/yfl_data/DynaHOI/gr00t/experiment/pipelines.py).
 
-## **Online Evaluation 🧪 (Closed-loop)**
+### Evaluation uses per-trajectory length, not `--steps`
 
-### **Overview 🔁**
+In [scripts/eval_policy.py](/data1/yfl_data/DynaHOI/scripts/eval_policy.py), the `steps` argument is documented as unused. Real rollout length comes from:
 
-- **Python** runs the policy inference and acts as the **server** (actively connects).
-- **Unity** executes action logic and acts as the **client** (waits for Python connection).
+- `dataset.trajectory_lengths[traj_id]`
 
-Since **inference** and **simulation** often run on different machines (e.g., Unity on your local desktop, inference on a remote GPU server), you’ll likely need **port forwarding**.
+### Motion hint cache is a hard prerequisite
 
-### **Steps**
+Any pipeline with `use_motion_hint=True` requires a precomputed cache under:
 
-1. **SSH port forwarding** (remote ↔ local):
+- `meta/motion_hint_rgb_absdiff_stride5/ratio_xxx`
+
+This is validated in [gr00t/data/dataset.py](/data1/yfl_data/DynaHOI/gr00t/data/dataset.py).
+
+If the cache is missing or inconsistent, dataset initialization fails explicitly.
+
+The cache algorithm is expected to be:
+
+- `rgb_absdiff_prefix_stride5_sum_v1`
+
+The cache should be created before training or evaluation using:
+
+- [scripts/precompute_motion_hints.py](/data1/yfl_data/DynaHOI/scripts/precompute_motion_hints.py)
+
+## Pipeline 1: `baseline`
+
+### Purpose
+
+This is the plain single-frame policy path. It does not use adjacent history windows and does not use motion hints.
+
+### Canonical data config
+
+- `baseline`
+
+### Transform type
+
+Uses:
+
+- `vlm_type="base"`
+
+in [gr00t/experiment/data_config.py](/data1/yfl_data/DynaHOI/gr00t/experiment/data_config.py).
+
+### Video input seen by the model
+
+The model sees only the current frame from the dataset transform pipeline.
+
+There is no extra frame concatenation in [gr00t/data/dataset.py](/data1/yfl_data/DynaHOI/gr00t/data/dataset.py).
+
+### Prompt semantics
+
+This path uses the generic GR00T conversation path from [gr00t/model/transforms.py](/data1/yfl_data/DynaHOI/gr00t/model/transforms.py).
+
+There is no baseline-style prompt explaining multiple image roles because there is no extra image structure here.
+
+### Training dataset behavior
+
+Training uses:
+
+- `build_default_train_dataset(...)`
+
+This means:
+
+- no `add_observe_frames`
+- no `use_motion_hint`
+- no extra availability filtering beyond normal dataset length
+
+### Evaluation behavior
+
+Evaluation uses:
+
+- `get_and_send_action(...)`
+
+in [gr00t/utils/eval.py](/data1/yfl_data/DynaHOI/gr00t/utils/eval.py).
+
+Rollout starts at:
+
+- frame `0`
+
+At every `action_horizon` boundary:
+
+- Unity sends current observation
+- Python adds task text
+- policy predicts a chunk of actions
+- actions are sent back to Unity
+
+### Parameter constraints
+
+Allowed:
+
+- `action_dim = 18`
+- positive `action_horizon`
+
+Must remain unset or default:
+
+- `window_length = 0`
+- `motion_hint_ratio = 0.25`
+
+If these are changed, validation fails.
+
+### When to use
+
+Use this pipeline when you want:
+
+- no temporal RGB context
+- no precomputed motion prior
+- plain current-frame policy behavior
+
+## Pipeline 2: `Local`
+
+### Purpose
+
+This is the short-term temporal RGB baseline.
+
+It prepends `K` history frames before the current observation, where:
+
+- `K = window_length`
+- if `observe_frame_offsets` is omitted, those frames are the default contiguous window
+- if `observe_frame_offsets` is provided, those frames are sampled at the explicit offsets
+
+### Canonical data config
+
+- `Local`
+
+### Transform type
+
+Uses:
+
+- `vlm_type="baseline"`
+
+### Video input seen by the model
+
+At dataset time, the video tensor is assembled as:
+
+1. history frames in the configured offset order
+2. `current`
+
+This is done in [gr00t/data/dataset.py](/data1/yfl_data/DynaHOI/gr00t/data/dataset.py) through:
+
+- `get_adjacent_observe_frames(...)`
+- `get_video(...)`
+
+### Prompt semantics
+
+The baseline prompt in [gr00t/model/transforms.py](/data1/yfl_data/DynaHOI/gr00t/model/transforms.py) explicitly says:
+
+- the first `window_length` images are history frames sampled from earlier timesteps before the current observation
+- the last image is the current frame
+
+This is the correct interpretation of the baseline window.
+
+### Training dataset behavior
+
+Training uses:
+
+- `build_baseline_train_dataset(...)`
+
+This sets:
+
+- `add_observe_frames=True`
+- `observe_frame_num=window_length`
+- `observe_frame_offsets=observe_frame_offsets` when provided
+
+Dataset validity rule:
+
+- only steps with `base_index >= max(history_offsets)` are included
+
+This filtering is done in:
+
+- `LeRobotSingleDataset._get_all_steps()`
+
+So the early steps of each trajectory are dropped for training.
+
+### Evaluation behavior
+
+Evaluation uses:
+
+- `get_and_send_action_baseline(...)`
+
+Rollout start:
+
+- `start_frame_idx = max(history_offsets)`
+
+This means:
+
+- no actions are produced before enough history exists
+- first action chunk starts only after `window_length` past frames are available
+
+At each inference point:
+
+1. Unity provides the current frame only
+2. Python fetches the configured history frames from the dataset video
+3. those frames are resized to Unity frame resolution
+4. final sequence becomes `history + current`
+5. sequence is sent into the policy
+
+### Parameter constraints
+
+Allowed:
+
+- positive `action_dim`
+- positive `action_horizon`
+- positive `window_length`
+- optional explicit `observe_frame_offsets` with the same length as `window_length`
+
+Unsupported:
+
+- changing `motion_hint_ratio`
+
+For this pipeline, motion hint parameters are supposed to stay at defaults and are not used.
+
+### When to use
+
+Use this pipeline when you want:
+
+- short-term causal RGB history only
+- no precomputed long-term motion prior
+
+## Pipeline 3: `Global`
+
+### Purpose
+
+This is the long-term precomputed motion-prior pipeline.
+
+It does not use adjacent RGB history. Instead, it feeds:
+
+1. one precomputed motion hint image
+2. one current frame
+
+### Canonical data config
+
+- `Global`
+
+### What the motion hint actually is
+
+The motion hint is a precomputed RGB image stored on disk.
+
+It is derived from the first `motion_hint_ratio` portion of the trajectory using fixed-stride RGB frame differences.
+
+Key implementation:
+
+- [compute_motion_hint_from_frames(...)](/data1/yfl_data/DynaHOI/gr00t/data/dataset.py)
+
+High-level algorithm:
+
+1. sample prefix frames at indices `0, 5, 10, ...`
+2. compute RGB absolute differences between consecutive sampled frames
+3. sum all RGB difference maps over time
+4. normalize each channel independently to `uint8`
+
+This produces one RGB motion-hint image per episode.
+
+### Transform type
+
+Uses:
+
+- `vlm_type="motion_hint"`
+
+### Video input seen by the model
+
+At dataset time, the video tensor becomes:
+
+1. `motion_hint`
+2. `current`
+
+This is assembled in:
+
+- `LeRobotSingleDataset.get_video(...)`
+
+### Prompt semantics
+
+The prompt explicitly says:
+
+- first image is a precomputed motion hint built from sampled prefix frames in the first part of the trajectory
+- second image is the current observation frame
+
+Note:
+
+- the code text says “first 20%�? but the real ratio is controlled by `motion_hint_ratio`
+- agents should treat the prompt wording as descriptive, and the actual source of truth as the CLI/config value
+
+### Training dataset behavior
+
+Training uses:
+
+- `build_motion_hint_train_dataset(...)`
+
+This sets:
+
+- `use_motion_hint=True`
+- `motion_hint_ratio=config.motion_hint_ratio`
+
+Dataset validity rule:
+
+- a trajectory is kept only if a valid motion hint cache file exists
+- its prefix length is large enough
+
+The filtering is handled by:
+
+- `_validate_motion_hint_cache()`
+- `_resolve_valid_motion_hint_trajectory_ids()`
+
+Step-level start rule:
+
+- training starts from `start_index = get_prefix_frame_count(trajectory_length, motion_hint_ratio)`
+
+So the policy only acts after the observation-only prefix segment.
+
+### Evaluation behavior
+
+Evaluation uses:
+
+- `get_and_send_action_motion_hint(...)`
+
+Rollout start:
+
+- `start_frame_idx = dataset.get_motion_hint_start_index(traj_id)`
+
+This equals the prefix-frame count implied by `motion_hint_ratio`.
+
+At each inference point:
+
+1. Unity provides the current frame
+2. Python loads the precomputed motion hint once
+3. the hint is resized to the current frame resolution
+4. final sequence becomes `motion_hint + current`
+5. the sequence is sent into the policy
+
+### Parameter constraints
+
+Allowed:
+
+- `action_dim = 18`
+- positive `action_horizon`
+- `0 < motion_hint_ratio < 1`
+
+Unsupported:
+
+- `window_length != 0`
+
+### When to use
+
+Use this pipeline when you want:
+
+- long-term global motion prior from the beginning of the trajectory
+- no short-term adjacent RGB window
+
+## Pipeline 4: `LoGo`
+
+### Purpose
+
+This is the fused pipeline.
+
+It combines:
+
+- short-term RGB history
+- long-term precomputed RGB frame-difference motion hint
+- current frame
+
+### Canonical data config
+
+- `LoGo`
+
+### Transform type
+
+Uses:
+
+- `vlm_type="baseline_motion_hint"`
+
+### Video input seen by the model
+
+The final image order is:
+
+1. `prevK`
+2. `prevK-1`
+3. ...
+4. `prev1`
+5. `motion_hint`
+6. `current`
+
+More generally:
+
+- `window_length` history frames
+- optional explicit `observe_frame_offsets` for the local history branch
+- then 1 motion hint image
+- then 1 current frame
+
+This is assembled in [gr00t/data/dataset.py](/data1/yfl_data/DynaHOI/gr00t/data/dataset.py).
+
+### Prompt semantics
+
+The fused prompt in [gr00t/model/transforms.py](/data1/yfl_data/DynaHOI/gr00t/model/transforms.py) says:
+
+- first `window_length` images are history frames sampled from earlier timesteps before the current observation
+- next image is a precomputed motion hint built by accumulating RGB frame differences from sampled prefix frames in the first part of the episode
+- last image is the current frame
+
+This is the most important semantic contract for the fused pipeline.
+
+### Training dataset behavior
+
+Training uses:
+
+- `build_baseline_motion_hint_train_dataset(...)`
+
+This sets both:
+
+- `add_observe_frames=True`
+- `use_motion_hint=True`
+
+Dataset validity rules:
+
+- the trajectory must have a valid motion-hint cache
+- the step index must satisfy both requirements:
+  - `base_index >= max(history_offsets)`
+  - `base_index >= motion_hint_start_index`
+
+The actual start index is:
+
+- `max(max(history_offsets), motion_hint_start_index)`
+
+This is enforced in:
+
+- `LeRobotSingleDataset._get_all_steps()`
+
+### Evaluation behavior
+
+Evaluation uses:
+
+- `get_and_send_action_baseline_motion_hint(...)`
+
+Rollout start:
+
+- `start_frame_idx = max(max(history_offsets), motion_hint_start_index)`
+
+This means the fused pipeline is causal in both senses:
+
+- it waits until enough local history exists
+- it also waits until the prefix segment used by the motion hint has been fully observed
+
+At each inference point:
+
+1. Unity provides the current frame
+2. Python fetches the configured local history frames
+3. Python loads the precomputed motion hint
+4. everything is resized to the current frame resolution
+5. final sequence becomes `history + motion_hint + current`
+6. sequence is sent into the policy
+
+### Parameter constraints
+
+Allowed:
+
+- `action_dim = 18`
+- positive `action_horizon`
+- positive `window_length`
+- optional explicit `observe_frame_offsets` with the same length as `window_length`
+- `0 < motion_hint_ratio < 1`
+
+Unlike the other specialized pipelines, this one requires both temporal parameter families at once.
+
+### When to use
+
+Use this pipeline when you want:
+
+- local short-term RGB dynamics
+- long-term global motion prior
+- current-frame appearance
+
+This is the richest hand pipeline currently registered.
+
+## Training-Side Model Configuration Differences
+
+Pipeline-specific action-head configuration is controlled in [gr00t/experiment/pipelines.py](/data1/yfl_data/DynaHOI/gr00t/experiment/pipelines.py).
+
+### `baseline`
+
+Uses:
+
+- `configure_our_model_for_train(...)`
+
+This:
+
+1. recreates action head if horizon differs from the current model
+2. replaces the action head while keeping the existing DiT
+3. forces `action_dim=18`
+
+### `Local`
+
+Uses:
+
+- `configure_baseline_model_for_train(...)`
+
+This is similar to `baseline` but allows `action_dim=config.action_dim`.
+
+In practice, the hand setup is still 18-dimensional.
+
+### `Global`
+
+Uses:
+
+- `configure_our_model_for_train(...)`
+
+So it follows the same action-head handling as `baseline`.
+
+### `LoGo`
+
+Also uses:
+
+- `configure_our_model_for_train(...)`
+
+So the fused pipeline:
+
+- does not introduce any new trainable modules
+- only changes the visual input packaging and prompt semantics
+
+This is important when continuing from an existing checkpoint such as `ObAct`.
+
+## Output Directory Behavior
+
+There are two output-dir policies.
+
+### Identity output dir
+
+Used by:
+
+- `Local`
+
+Output path is used exactly as provided.
+
+### Timestamped output dir
+
+Used by:
+
+- `baseline`
+- `Global`
+- `LoGo`
+
+The actual directory becomes:
+
+- `output_dir/<MM><DD>:<HH>_<dataset_suffix>`
+
+This is implemented by:
+
+- `resolve_output_dir_with_timestamp(...)`
+
+## Result Tag Naming
+
+Eval outputs are named per pipeline.
+
+### `baseline`
+
+Result tag:
+
+- `<pipeline>:<dataset_tag>`
+
+### `Local`
+
+Result tag:
+
+- `<pipeline>:window_<window_length>:<dataset_tag>` for default contiguous history
+- `<pipeline>:offsets_<offsets>:<dataset_tag>` for explicit history offsets
+
+### `Global`
+
+Result tag:
+
+- `<pipeline>:<dataset_tag>`
+
+### `LoGo`
+
+Result tag:
+
+- `<pipeline>:window_<window_length>:ratio_<motion_hint_ratio>:<dataset_tag>` for default contiguous history
+- `<pipeline>:offsets_<offsets>:ratio_<motion_hint_ratio>:<dataset_tag>` for explicit history offsets
+
+## Recommended Valid Pairings
+
+Use these pairings unless you have a concrete reason not to.
+
+### Single-frame policy
+
+- `--pipeline baseline`
+- `--data-config baseline`
+
+### Adjacent RGB baseline
+
+- `--pipeline Local`
+- `--data-config Local`
+
+### Farneback motion-hint pipeline
+
+- `--pipeline Global`
+- `--data-config Global`
+
+### Fused adjacent-window + motion-hint pipeline
+
+- `--pipeline LoGo`
+- `--data-config LoGo`
+
+## Recommended Commands
+
+### Train fused pipeline from an existing checkpoint
 
 ```bash
-ssh -L 8765:127.0.0.1:8765 <your_remote_server>
+python /data1/yfl_data/DynaHOI/scripts/finetune_policy.py \
+  --pipeline LoGo \
+  --data-config LoGo \
+  --base-model-path /data1/yfl_data/DynaHOI/gr00t/checkpoints/ObAct \
+  --window-length 5 \
+  --motion-hint-ratio 0.2
 ```
 
-2. Download **ObAct weights** from [Google Drive](https://drive.google.com/drive/folders/10BlLxE14uEevkgVLK8Px3C7oMZAoaqAs?usp=sharing).Then update `model_path` in the inference script:
-
-    - scripts/eval_policy_baseline.py → **ObAct**.
-
-    - scripts/eval_policy_our.py → **vanilla GR00T-N1.5**.
-
-3. Run the policy-side inference:
+### Evaluate fused pipeline
 
 ```bash
-python scripts/eval_policy_baseline.py
-# or
-python scripts/eval_policy_our.py
+python /data1/yfl_data/DynaHOI/scripts/eval_policy.py \
+  --pipeline LoGo \
+  --data-config LoGo \
+  --model-path /path/to/checkpoint \
+  --window-length 5 \
+  --observe-frame-offsets 10 5 3 2 1 \
+  --motion-hint-ratio 0.2
 ```
 
-4. In Unity, click **Play** ▶️ in the GUI.
+## Common Failure Modes
 
-You should see real-time interaction in the **Game** window.
+### Unknown pipeline
+
+Cause:
+
+- pipeline name not registered in [gr00t/experiment/pipelines.py](/data1/yfl_data/DynaHOI/gr00t/experiment/pipelines.py)
+
+### Empty eval dataset
+
+Cause:
+
+- no valid steps remain after start-index filtering
+
+Common triggers:
+
+- `window_length` too large
+- `motion_hint_ratio` too large
+- motion hint availability removes too many trajectories
+
+### Motion hint cache missing
+
+Cause:
+
+- missing manifest or image files in `meta/motion_hint_rgb_absdiff_stride5`
+
+### Wrong data-config / pipeline pairing
+
+Cause:
+
+- using a transform whose `vlm_type` does not match the pipeline’s expected image layout
+
+Examples:
+
+- `Local` with `Global`
+- `Global` with `Local`
+
+### Invalid parameter family for a pipeline
+
+Cause:
+
+- setting `window_length` for `Global`
+- setting motion-hint parameters for `Local`
+
+Validation is intentionally strict and should not be bypassed.
+
+## Agent Checklist
+
+Before modifying a command, pipeline, or dataset path, an agent should verify:
+
+1. Which pipeline is intended.
+2. Which data config matches that pipeline.
+3. Whether motion hint cache is required.
+4. What the model will actually see as image order.
+5. What the rollout start index is.
+6. Whether the current checkpoint was trained on the same input structure.
+
+If any of these are unclear, inspect:
+
+- [gr00t/experiment/pipelines.py](/data1/yfl_data/DynaHOI/gr00t/experiment/pipelines.py)
+- [gr00t/data/dataset.py](/data1/yfl_data/DynaHOI/gr00t/data/dataset.py)
+- [gr00t/model/transforms.py](/data1/yfl_data/DynaHOI/gr00t/model/transforms.py)
+
+Do not infer pipeline semantics from old scripts or old experiment names alone.
 
 
-
-## **Fine-tuning 🛠️**
-
-Script mapping:
-
-- **Vanilla GR00T-N1.5 fine-tuning**:
-
-  scripts/gr00t_finetune_our_18dim.py
-
-- **ObAct baseline fine-tuning**:
-
-  scripts/gr00t_finetune_our_18dim_baseline.py
-
-Before running, configure key args like:
-
-- dataset_path
-- output_dir
-- base_model_path
-- (and any cluster / logging configs you use)
-
-We recommend launching with setsid + torchrun:
-
-```bash
-setsid torchrun --standalone --nproc_per_node=4 scripts/gr00t_finetune_our_18dim.py > nohup_logs/xxx.log 2>&1 &
-```
-
-
-
-## **Dynamic HOI Trajectory Collection 📹🤖**
-
-We provide:
-
-- **atomic motion generation scripts**
-- **automated grasping trajectory collection scripts**
-
-in the [Google Drive](https://drive.google.com/drive/folders/10BlLxE14uEevkgVLK8Px3C7oMZAoaqAs?usp=sharing), Unity Controller folder:
-
-A detailed tutorial is coming soon, including:
-
-- how to generate **large-scale, valid motion parameters**
-- how to collect data via **WebSocket** while **compressing videos**
-- recommended Unity simulator settings (scene setup, playback rate, resolution, logging, etc.)
-
-
-
-## **Citation 📚**
-
-```
-@article{hu2026dynahoi,
-  title={DynaHOI: Benchmarking Hand-Object Interaction for Dynamic Target},
-  author={Bocheng Hu and Zhonghan zhao and Kaiyue zhou and Hongwei Wang and Gaoang Wang},
-  journal={arXiv preprint arXiv:2602.11919},
-  year={2026}
-}
-```
-
-
-
-## **Acknowledgements 🙌✨**
-
-Huge thanks to these excellent open-source projects that made this work possible:
-
-[GR00T](https://github.com/NVIDIA/Isaac-GR00T), [OpenVLA](https://github.com/openvla/openvla), [UP-VLA](https://github.com/CladernyJorn/UP-VLA), [Openpi](https://github.com/Physical-Intelligence/openpi), [Lerobot](https://github.com/huggingface/lerobot) and [OmniObject3D](https://github.com/omniobject3d/OmniObject3D/tree/main?tab=readme-ov-file). 

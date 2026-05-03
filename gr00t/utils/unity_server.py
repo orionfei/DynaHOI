@@ -15,6 +15,7 @@ class UnityServer:
         self._recv_task = None
         self._obs_queue = asyncio.Queue()
         self._metrics_queue = asyncio.Queue()
+        self._dense_metrics_queue = asyncio.Queue()
         self._connection_event = asyncio.Event()
         self.server = None
         self.resize_size = resize_size
@@ -70,6 +71,19 @@ class UnityServer:
                         "annotation.human.action.task_description": np.array([data["task_type"]]),
                     }
                 self._obs_queue.put_nowait(obs)
+                if data.get("has_dense_metrics", False):
+                    dense_metrics = {
+                        "episode_id": data.get("episode_id"),
+                        "repeat": data.get("repeat"),
+                        "step": data.get("step"),
+                        "current_distance_xz": data.get("current_distance_xz"),
+                        "min_XZ": data.get("min_distance_to_target"),
+                        "minJointToSurfaceDistance": data.get("min_joint_to_surface_distance"),
+                        "success_early": data.get("success_early"),
+                        "current_frame_index": data.get("current_frame_index"),
+                        "hand_motion_index": data.get("hand_motion_index"),
+                    }
+                    self._dense_metrics_queue.put_nowait(dense_metrics)
                 print(f"✅ received obs, put into queue")
             
             elif msg["type"] == "metrics":
@@ -174,6 +188,26 @@ class UnityServer:
             if self._metrics_queue.empty():
                 return None
             return self._metrics_queue.get_nowait()
+
+    def get_dense_metrics_from_unity(self, block=False, timeout=None):
+        """Get optional chunk-level metrics sent alongside image_and_state."""
+        loop = asyncio.get_event_loop()
+        if block:
+            try:
+                return loop.run_until_complete(
+                    asyncio.wait_for(self._dense_metrics_queue.get(), timeout)
+                )
+            except asyncio.TimeoutError:
+                return None
+        else:
+            if self._dense_metrics_queue.empty():
+                return None
+            return self._dense_metrics_queue.get_nowait()
+
+    def clear_dense_metrics(self):
+        """Discard queued dense metrics, useful before starting a new controlled rollout."""
+        while not self._dense_metrics_queue.empty():
+            self._dense_metrics_queue.get_nowait()
 
     async def send_start_episode(self, episode_id, task_type, repeat_num, steps, start_frame_idx, windowSize):
         """notify Unity to start an episode"""
